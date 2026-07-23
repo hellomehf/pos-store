@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build output
+frontend/dist/
+frontend/dist-ssr/
+backend/public/build/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+auth.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.stackdump
+
+# Archives
+*.zip
+*.tar.gz
+
+# Local demo media
+.chrome-demo/
+*.png
+*.jpg
+!frontend/public/**/*.png
+!frontend/public/**/*.jpg
+
+# IDE / Editor
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Laravel backend
+storage/*.key
+storage/pail
+/public/hot
+/public/storage
+/public/fonts-manifest.dev.json
+*.local
+.phpactor.json
+.phpunit.result.cache
+.phpunit.cache
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+
+# Test & coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.local
+*.bak
+*.tmp
