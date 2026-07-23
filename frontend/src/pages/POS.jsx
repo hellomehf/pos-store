@@ -6,21 +6,22 @@ import { useStore } from '../contexts/StoreContext'
 import { useToast } from '../contexts/ToastContext'
 import KhqrModal from '../components/KhqrModal'
 
-const formatKHR = (usd, rate) => Math.round(usd * rate).toLocaleString()
-const formatDual = (usd, rate) => `$${usd.toFixed(2)} / ${formatKHR(usd, rate)}៛`
+const formatKHR = (usd, rate) => Math.round((usd || 0) * (rate || 4100)).toLocaleString()
+const formatDual = (usd, rate) => `$${Number(usd || 0).toFixed(2)} / ${formatKHR(usd, rate)}៛`
 
 function ReceiptModal({ sale, onClose, onPrint }) {
   const receiptRef = useRef(null)
   const { storeName: receiptStoreName } = useStore()
 
-  const rateUsed = sale.exchange_rate || 4100
-  const totalKhr = sale.total_khr || Math.round(sale.total * rateUsed)
-  const tenderedKhr = sale.tendered_khr || Math.round((sale.tendered_amount || 0) * rateUsed)
-  const changeKhr = sale.change_khr || Math.round((sale.change_amount || 0) * rateUsed)
+  const rateUsed = sale?.exchange_rate || 4100
+  const totalVal = Number(sale?.total || 0)
+  const totalKhr = sale?.total_khr || Math.round(totalVal * rateUsed)
+  const tenderedKhr = sale?.tendered_khr || Math.round(Number(sale?.tendered_amount || 0) * rateUsed)
+  const changeKhr = sale?.change_khr || Math.round(Number(sale?.change_amount || 0) * rateUsed)
 
   const formatPaymentMethod = (method) => {
     if (method === 'khqr') return 'KHQR'
-    return method?.charAt(0).toUpperCase() + method?.slice(1)
+    return method ? method.charAt(0).toUpperCase() + method.slice(1) : ''
   }
 
   const handlePrint = () => {
@@ -53,21 +54,21 @@ function ReceiptModal({ sale, onClose, onPrint }) {
       .footer { text-align: center; margin-top: 8px; font-size: 11px; }
     </style></head><body>
       <div class="receipt-header">
-        <h4>${receiptStoreName}</h4>
-        <p>Register #1 &middot; ${sale.user?.name || ''}</p>
-        <p>${new Date(sale.created_at).toLocaleString()}</p>
-        <p><strong>${sale.invoice_number}</strong></p>
+        <h4>${receiptStoreName || ''}</h4>
+        <p>Register #1 &middot; ${sale?.user?.name || ''}</p>
+        <p>${sale?.created_at ? new Date(sale.created_at).toLocaleString() : ''}</p>
+        <p><strong>${sale?.invoice_number || ''}</strong></p>
       </div>
       <hr />
       <div class="col-header"><span>ITEM</span><span>QTY</span><span>PRICE</span></div>
       <hr style="margin: 2px 0 6px" />
-      ${sale.items?.map(item => `<div class="item-row"><span>${item.product_name}</span><span>${item.quantity}</span><span>$${parseFloat(item.line_total).toFixed(2)}</span></div>`).join('') || ''}
+      ${(sale?.items || []).map(item => `<div class="item-row"><span>${item.product_name || ''}</span><span>${item.quantity || 0}</span><span>$${Number(item.line_total || 0).toFixed(2)}</span></div>`).join('')}
       <hr />
-      <div class="summary-row"><span>Subtotal</span><span>$${parseFloat(sale.subtotal).toFixed(2)}</span></div>
-      <div class="summary-row"><span>Tax (${parseFloat(sale.tax_rate).toFixed(0)}%)</span><span>$${parseFloat(sale.tax_amount).toFixed(2)}</span></div>
-      <div class="summary-row bold"><span>TOTAL</span><span>$${parseFloat(sale.total).toFixed(2)} / ${totalKhr.toLocaleString()}៛</span></div>
-      <div class="summary-row"><span>Payment</span><span>${formatPaymentMethod(sale.payment_method)}</span></div>
-      ${sale.payment_method === 'cash' ? `<div class="summary-row"><span>Tendered</span><span>$${parseFloat(sale.tendered_amount).toFixed(2)} / ${tenderedKhr.toLocaleString()}៛</span></div><div class="summary-row"><span>Change</span><span>$${parseFloat(sale.change_amount).toFixed(2)} / ${changeKhr.toLocaleString()}៛</span></div>` : ''}
+      <div class="summary-row"><span>Subtotal</span><span>$${Number(sale?.subtotal || 0).toFixed(2)}</span></div>
+      <div class="summary-row"><span>Tax (${Number(sale?.tax_rate || 0).toFixed(0)}%)</span><span>$${Number(sale?.tax_amount || 0).toFixed(2)}</span></div>
+      <div class="summary-row bold"><span>TOTAL</span><span>$${totalVal.toFixed(2)} / ${totalKhr.toLocaleString()}៛</span></div>
+      <div class="summary-row"><span>Payment</span><span>${formatPaymentMethod(sale?.payment_method)}</span></div>
+      ${sale?.payment_method === 'cash' ? `<div class="summary-row"><span>Tendered</span><span>$${Number(sale?.tendered_amount || 0).toFixed(2)} / ${tenderedKhr.toLocaleString()}៛</span></div><div class="summary-row"><span>Change</span><span>$${Number(sale?.change_amount || 0).toFixed(2)} / ${changeKhr.toLocaleString()}៛</span></div>` : ''}
       <div class="summary-row"><span>Rate</span><span>$1.00 = ${rateUsed.toLocaleString()}៛</span></div>
       <hr />
       <div class="footer">Thank you for shopping with us!</div>
@@ -84,11 +85,11 @@ function ReceiptModal({ sale, onClose, onPrint }) {
         <div ref={receiptRef}>
           <div className="receipt-header">
             <h4>{receiptStoreName}</h4>
-            <small>Register #1 &middot; {sale.user?.name}</small>
+            <small>Register #1 &middot; {sale?.user?.name || ''}</small>
             <br />
-            <small>{new Date(sale.created_at).toLocaleString()}</small>
+            <small>{sale?.created_at ? new Date(sale.created_at).toLocaleString() : ''}</small>
             <br />
-            <small><strong>{sale.invoice_number}</strong></small>
+            <small><strong>{sale?.invoice_number || ''}</strong></small>
           </div>
 
           <hr className="receipt-divider" />
@@ -101,11 +102,11 @@ function ReceiptModal({ sale, onClose, onPrint }) {
           <div style={{ borderTop: '1px dashed var(--border-color)', marginBottom: 8 }} />
 
           <div className="receipt-items">
-            {sale.items?.map((item, i) => (
+            {(sale?.items || []).map((item, i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 50px 80px', gap: 2, alignItems: 'center', padding: '3px 0', fontFamily: 'var(--font-mono)', fontSize: 13 }}>
                 <span style={{ textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_name}</span>
                 <span style={{ textAlign: 'center' }}>{item.quantity}</span>
-                <span style={{ textAlign: 'right' }}>${parseFloat(item.line_total).toFixed(2)}</span>
+                <span style={{ textAlign: 'right' }}>${Number(item.line_total || 0).toFixed(2)}</span>
               </div>
             ))}
           </div>
@@ -113,14 +114,14 @@ function ReceiptModal({ sale, onClose, onPrint }) {
           <hr className="receipt-divider" />
 
           <div className="receipt-totals" style={{ fontFamily: 'var(--font-mono)' }}>
-            <div className="receipt-total-row"><span>Subtotal</span><span>${parseFloat(sale.subtotal).toFixed(2)}</span></div>
-            <div className="receipt-total-row"><span>Tax ({parseFloat(sale.tax_rate).toFixed(0)}%)</span><span>${parseFloat(sale.tax_amount).toFixed(2)}</span></div>
-            <div className="receipt-total-row grand"><span>Total</span><span>${parseFloat(sale.total).toFixed(2)} / {totalKhr.toLocaleString()}៛</span></div>
-            <div className="receipt-total-row"><span>Payment</span><span>{formatPaymentMethod(sale.payment_method)}</span></div>
-            {sale.payment_method === 'cash' && (
+            <div className="receipt-total-row"><span>Subtotal</span><span>${Number(sale?.subtotal || 0).toFixed(2)}</span></div>
+            <div className="receipt-total-row"><span>Tax ({Number(sale?.tax_rate || 0).toFixed(0)}%)</span><span>${Number(sale?.tax_amount || 0).toFixed(2)}</span></div>
+            <div className="receipt-total-row grand"><span>Total</span><span>${totalVal.toFixed(2)} / {totalKhr.toLocaleString()}៛</span></div>
+            <div className="receipt-total-row"><span>Payment</span><span>{formatPaymentMethod(sale?.payment_method)}</span></div>
+            {sale?.payment_method === 'cash' && (
               <>
-                <div className="receipt-total-row"><span>Tendered</span><span>${parseFloat(sale.tendered_amount).toFixed(2)} / {tenderedKhr.toLocaleString()}៛</span></div>
-                <div className="receipt-total-row"><span>Change</span><span>${parseFloat(sale.change_amount).toFixed(2)} / {changeKhr.toLocaleString()}៛</span></div>
+                <div className="receipt-total-row"><span>Tendered</span><span>${Number(sale?.tendered_amount || 0).toFixed(2)} / {tenderedKhr.toLocaleString()}៛</span></div>
+                <div className="receipt-total-row"><span>Change</span><span>${Number(sale?.change_amount || 0).toFixed(2)} / {changeKhr.toLocaleString()}៛</span></div>
               </>
             )}
             <div className="receipt-total-row"><span>Rate</span><span>$1.00 = {rateUsed.toLocaleString()}៛</span></div>
@@ -141,8 +142,9 @@ function ReceiptModal({ sale, onClose, onPrint }) {
 function CashKeypad({ tendered, setTendered, total, currency, setCurrency, exchangeRate }) {
   const isKHR = currency === 'KHR'
   const tenderedNum = parseFloat(tendered) || 0
-  const tenderedUSD = isKHR ? tenderedNum / exchangeRate : tenderedNum
-  const changeUSD = Math.max(0, tenderedUSD - total)
+  const rate = exchangeRate || 4100
+  const tenderedUSD = isKHR ? tenderedNum / rate : tenderedNum
+  const changeUSD = Math.max(0, tenderedUSD - (total || 0))
 
   const presets = isKHR
     ? [{ label: '៛20K', value: 20000 }, { label: '៛40K', value: 40000 }, { label: '៛50K', value: 50000 }, { label: '៛100K', value: 100000 }]
@@ -185,8 +187,8 @@ function CashKeypad({ tendered, setTendered, total, currency, setCurrency, excha
         </div>
         <div className="keypad-display-equiv">
           {isKHR
-            ? `≈ $${(tenderedNum / exchangeRate).toFixed(2)}`
-            : `≈ ${formatKHR(tenderedNum, exchangeRate)}៛`
+            ? `≈ $${(tenderedNum / rate).toFixed(2)}`
+            : `≈ ${formatKHR(tenderedNum, rate)}៛`
           }
         </div>
       </div>
@@ -208,7 +210,7 @@ function CashKeypad({ tendered, setTendered, total, currency, setCurrency, excha
 
       <div className="keypad-change">
         <span>Change Due</span>
-        <span className="mono" style={{ color: 'var(--success)' }}>{formatDual(changeUSD, exchangeRate)}</span>
+        <span className="mono" style={{ color: 'var(--success)' }}>{formatDual(changeUSD, rate)}</span>
       </div>
     </div>
   )
@@ -234,7 +236,7 @@ export default function POS() {
   const failedImages = useRef(new Set())
   const [, forceUpdate] = useReducer(x => x + 1, 0)
 
-  const { items, addItem, updateQuantity, removeItem, voidSale, paymentMethod, setPaymentMethod, taxRate, setTaxRate, subtotal, taxAmount, total, itemCount } = useCart()
+  const { items = [], addItem, updateQuantity, removeItem, voidSale, paymentMethod, setPaymentMethod, taxRate, setTaxRate, subtotal = 0, taxAmount = 0, total = 0, itemCount = 0 } = useCart()
   const { user } = useAuth()
   const { storeName, storeLogo } = useStore()
   const toast = useToast()
@@ -245,15 +247,15 @@ export default function POS() {
       api.get('/products'),
       api.get('/settings/store'),
     ]).then(([catRes, prodRes, settingsRes]) => {
-      setCategories(catRes.data)
-      setProducts(prodRes.data)
+      setCategories(catRes?.data || [])
+      setProducts(prodRes?.data || [])
 
-      const s = settingsRes.data
-      if (s.exchange_rate) {
+      const s = settingsRes?.data
+      if (s?.exchange_rate) {
         setExchangeRate(s.exchange_rate)
         localStorage.setItem('exchange_rate', s.exchange_rate)
       }
-      if (s.tax_rate !== undefined && s.tax_rate !== null) {
+      if (s?.tax_rate !== undefined && s?.tax_rate !== null) {
         setTaxRate(s.tax_rate)
         localStorage.setItem('tax_rate', s.tax_rate)
       }
@@ -261,9 +263,9 @@ export default function POS() {
       .finally(() => setLoading(false))
   }, [])
 
-  const filteredProducts = products
+  const filteredProducts = (products || [])
     .filter(p => !activeCategory || p.category_id === activeCategory)
-    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()))
+    .filter(p => !search || p.name?.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()))
 
   const handleCharge = async () => {
     if (items.length === 0) return toast.error('Cart is empty')
@@ -314,7 +316,7 @@ export default function POS() {
       toast.success('Sale completed!')
 
       const prodRes = await api.get('/products')
-      setProducts(prodRes.data)
+      setProducts(prodRes?.data || [])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to process sale')
     } finally {
@@ -342,7 +344,7 @@ export default function POS() {
       toast.success('Payment completed!')
 
       const prodRes = await api.get('/products')
-      setProducts(prodRes.data)
+      setProducts(prodRes?.data || [])
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to process sale')
     } finally {
@@ -491,7 +493,7 @@ export default function POS() {
                 <div className="product-card-name">{product.name}</div>
                 <div className="product-card-category">{product.category?.name}</div>
                 <div className="product-card-footer">
-                  <span className="product-card-price">${parseFloat(product.price).toFixed(2)}</span>
+                  <span className="product-card-price">${Number(product.price || 0).toFixed(2)}</span>
                   <span className={`product-card-stock ${product.stock_qty <= 10 ? 'low' : ''}`}>
                     {product.stock_qty}
                   </span>
@@ -529,14 +531,14 @@ export default function POS() {
                   <div className="cart-item" key={item.product_id}>
                     <div className="cart-item-info">
                       <div className="cart-item-name">{item.product_name}</div>
-                      <div className="cart-item-price">${item.unit_price.toFixed(2)} each</div>
+                      <div className="cart-item-price">${Number(item.unit_price || 0).toFixed(2)} each</div>
                     </div>
                     <div className="qty-stepper">
                       <button onClick={() => updateQuantity(item.product_id, -1)}><i className="fas fa-minus" /></button>
                       <span>{item.quantity}</span>
                       <button onClick={() => updateQuantity(item.product_id, 1)}><i className="fas fa-plus" /></button>
                     </div>
-                    <div className="cart-item-total">${item.line_total.toFixed(2)}</div>
+                    <div className="cart-item-total">${Number(item.line_total || 0).toFixed(2)}</div>
                   </div>
                 ))
               )}
@@ -545,11 +547,11 @@ export default function POS() {
             <div className="cart-summary">
               <div className="cart-summary-row">
                 <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
-                <span className="mono">${subtotal.toFixed(2)}</span>
+                <span className="mono">${Number(subtotal || 0).toFixed(2)}</span>
               </div>
               <div className="cart-summary-row">
                 <span style={{ color: 'var(--text-secondary)' }}>Tax ({taxRate}%)</span>
-                <span className="mono">${taxAmount.toFixed(2)}</span>
+                <span className="mono">${Number(taxAmount || 0).toFixed(2)}</span>
               </div>
               <div className="cart-summary-row total">
                 <span>Total Due</span>
