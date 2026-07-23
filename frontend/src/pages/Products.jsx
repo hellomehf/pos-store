@@ -26,11 +26,17 @@ export default function Products() {
 
   const load = () => {
     Promise.all([
-      api.get(`/products${search ? `?search=${search}` : ''}`),
+      api.get(`/products${search ? `?search=${encodeURIComponent(search)}` : ''}`),
       api.get('/categories'),
     ]).then(([p, c]) => {
-      setProducts(p.data)
-      setCategories(c.data)
+      const productData = Array.isArray(p?.data) ? p.data : (p?.data?.data || [])
+      const categoryData = Array.isArray(c?.data) ? c.data : (c?.data?.data || [])
+      setProducts(productData)
+      setCategories(categoryData)
+    }).catch(() => {
+      toast.error('Failed to load products')
+      setProducts([])
+      setCategories([])
     }).finally(() => setLoading(false))
   }
 
@@ -48,13 +54,22 @@ export default function Products() {
   const fetchPreviewSku = (categoryId) => {
     if (!categoryId) { setPreviewSku(''); return }
     api.get(`/products/preview-sku?category_id=${categoryId}`)
-      .then(res => setPreviewSku(res.data.sku))
+      .then(res => setPreviewSku(res?.data?.sku || ''))
       .catch(() => setPreviewSku(''))
   }
 
   const openEdit = (p) => {
+    if (!p) return
     setEditing(p)
-    setForm({ name: p.name, sku: p.sku, barcode: p.barcode ?? '', price: p.price, cost_price: p.cost_price ?? '', stock_qty: p.stock_qty, category_id: p.category_id })
+    setForm({
+      name: p.name || '',
+      sku: p.sku || '',
+      barcode: p.barcode ?? '',
+      price: p.price ?? '',
+      cost_price: p.cost_price ?? '',
+      stock_qty: p.stock_qty ?? '',
+      category_id: p.category_id ?? ''
+    })
     setImageFile(null)
     setImagePreview(p.image ? `/storage/${p.image}` : '')
     setShowModal(true)
@@ -64,13 +79,13 @@ export default function Products() {
     e.preventDefault()
     try {
       const fd = new FormData()
-      fd.append('name', form.name)
+      fd.append('name', form.name || '')
       if (form.sku) fd.append('sku', form.sku)
       if (form.barcode) fd.append('barcode', form.barcode)
-      fd.append('price', form.price)
-      fd.append('cost_price', form.cost_price)
-      fd.append('stock_qty', form.stock_qty)
-      fd.append('category_id', form.category_id)
+      fd.append('price', form.price || 0)
+      fd.append('cost_price', form.cost_price || 0)
+      fd.append('stock_qty', form.stock_qty || 0)
+      fd.append('category_id', form.category_id || '')
       if (imageFile) fd.append('image', imageFile)
 
       if (editing) {
@@ -105,11 +120,11 @@ export default function Products() {
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0])
+    if (e.dataTransfer?.files?.length) handleFile(e.dataTransfer.files[0])
   }
 
   const confirmDelete = async () => {
-    if (!productToDelete) return
+    if (!productToDelete?.id) return
     try {
       await api.delete(`/products/${productToDelete.id}`)
       toast.success('Product deleted')
@@ -120,8 +135,14 @@ export default function Products() {
 
   const handleRestock = async (e) => {
     e.preventDefault()
+    if (!restockModal?.id) return
+    const qty = parseInt(restockQty, 10)
+    if (isNaN(qty) || qty <= 0) {
+      toast.error('Please enter a valid restock quantity')
+      return
+    }
     try {
-      await api.post(`/products/${restockModal.id}/restock`, { quantity: parseInt(restockQty) })
+      await api.post(`/products/${restockModal.id}/restock`, { quantity: qty })
       toast.success('Stock updated')
       setRestockModal(null)
       setRestockQty('')
@@ -143,6 +164,17 @@ export default function Products() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
       osc.stop(ctx.currentTime + 0.15)
     } catch {}
+  }, [])
+
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        const state = scannerRef.current.getState()
+        if (state === 2) await scannerRef.current.stop()
+      } catch {}
+      scannerRef.current = null
+    }
+    setScannerActive(false)
   }, [])
 
   useEffect(() => {
@@ -175,11 +207,11 @@ export default function Products() {
           () => {}
         ).catch((err) => {
           console.error('Camera Start Error Details:', err)
-          const msg = err.name === 'NotAllowedError'
+          const msg = err?.name === 'NotAllowedError'
             ? 'Camera access denied. Please allow camera permission in your browser settings, or type the barcode manually.'
-            : err.name === 'NotFoundError'
+            : err?.name === 'NotFoundError'
             ? 'No camera found on this device. Please type the barcode manually.'
-            : err.name === 'NotReadableError'
+            : err?.name === 'NotReadableError'
             ? 'Camera is in use by another app. Please close other camera apps and try again, or type the barcode manually.'
             : 'Camera unavailable. Please type the barcode manually.'
           toast.error(msg)
@@ -188,9 +220,9 @@ export default function Products() {
         })
       } catch (err) {
         console.error('Camera Start Error Details:', err)
-        const msg = err.name === 'NotAllowedError'
+        const msg = err?.name === 'NotAllowedError'
           ? 'Camera access denied. Please allow camera permission in your browser settings, or type the barcode manually.'
-          : err.name === 'NotFoundError'
+          : err?.name === 'NotFoundError'
           ? 'No camera found on this device. Please type the barcode manually.'
           : 'Camera unavailable. Please type the barcode manually.'
         toast.error(msg)
@@ -200,17 +232,6 @@ export default function Products() {
     }, 100)
     return () => { mounted = false; clearTimeout(timer) }
   }, [scannerActive, playBeep, toast])
-
-  const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try {
-        const state = scannerRef.current.getState()
-        if (state === 2) await scannerRef.current.stop()
-      } catch {}
-      scannerRef.current = null
-    }
-    setScannerActive(false)
-  }, [])
 
   if (loading) return <div className="d-flex justify-content-center py-5"><i className="fas fa-spinner fa-spin fa-2x" style={{ color: 'var(--text-muted)' }} /></div>
 
@@ -242,40 +263,47 @@ export default function Products() {
             </tr>
           </thead>
           <tbody>
-            {products.map(p => (
-              <tr key={p.id}>
-                <td style={{ fontWeight: 500 }}>{p.name}</td>
-                <td><span className="mono" style={{ fontSize: 12 }}>{p.sku}</span></td>
-                <td><span className="mono" style={{ fontSize: 12, color: p.barcode ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{p.barcode || '—'}</span></td>
-                <td>{p.category?.name}</td>
-                <td><span className="mono">${parseFloat(p.price).toFixed(2)}</span></td>
-                <td><span className="mono" style={{ color: 'var(--amber)' }}>${parseFloat(p.cost_price).toFixed(2)}</span></td>
-                <td>
-                  <span className={`mono ${p.stock_qty <= 10 ? 'text-danger' : ''}`} style={{ fontWeight: p.stock_qty <= 10 ? 600 : 400 }}>
-                    {p.stock_qty}
-                  </span>
-                </td>
-                <td>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                    {new Date(p.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
-                    <br />
-                    <span className="mono" style={{ fontSize: 11 }}>
-                      {new Date(p.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </span>
-                </td>
-                <td>{p.stock_qty <= 10 ? <span className="badge-low-stock">Low Stock</span> : <span className="badge-ok">In Stock</span>}</td>
-                <td>
-                  {user?.role === 'admin' && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setRestockModal(p)}><i className="fas fa-truck" /></button>
-                      <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => openEdit(p)}><i className="fas fa-edit" /></button>
-                      <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12, color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setProductToDelete(p)}><i className="fas fa-trash" /></button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {(products || []).length === 0 ? (
+              <tr><td colSpan="10" className="text-center py-4" style={{ color: 'var(--text-muted)' }}>No products found</td></tr>
+            ) : (
+              (products || []).map(p => {
+                const stockQty = Number(p?.stock_qty || 0)
+                return (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 500 }}>{p.name || 'Unnamed Product'}</td>
+                    <td><span className="mono" style={{ fontSize: 12 }}>{p.sku || 'N/A'}</span></td>
+                    <td><span className="mono" style={{ fontSize: 12, color: p.barcode ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{p.barcode || '—'}</span></td>
+                    <td>{p.category?.name || 'Uncategorized'}</td>
+                    <td><span className="mono">${Number(p.price || 0).toFixed(2)}</span></td>
+                    <td><span className="mono" style={{ color: 'var(--amber)' }}>${Number(p.cost_price || 0).toFixed(2)}</span></td>
+                    <td>
+                      <span className={`mono ${stockQty <= 10 ? 'text-danger' : ''}`} style={{ fontWeight: stockQty <= 10 ? 600 : 400 }}>
+                        {stockQty}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {p.created_at ? new Date(p.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A'}
+                        <br />
+                        <span className="mono" style={{ fontSize: 11 }}>
+                          {p.created_at ? new Date(p.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </span>
+                    </td>
+                    <td>{stockQty <= 10 ? <span className="badge-low-stock">Low Stock</span> : <span className="badge-ok">In Stock</span>}</td>
+                    <td>
+                      {user?.role === 'admin' && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setRestockModal(p)}><i className="fas fa-truck" /></button>
+                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => openEdit(p)}><i className="fas fa-edit" /></button>
+                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12, color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setProductToDelete(p)}><i className="fas fa-trash" /></button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -349,7 +377,7 @@ export default function Products() {
                   if (!editing) fetchPreviewSku(e.target.value)
                 }} required>
                   <option value="">Select...</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {(categories || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div className="row g-3 mb-4">
@@ -372,7 +400,7 @@ export default function Products() {
                 <label className="form-label-dark">Image <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
                 {imagePreview ? (
                   <div className="dropzone-preview">
-                    <img src={imagePreview} alt="Preview" />
+                    <img src={imagePreview} alt="Preview" onError={(e) => { e.target.style.display = 'none' }} />
                     <button type="button" className="dropzone-remove" onClick={() => { setImageFile(null); setImagePreview('') }}>
                       <i className="fas fa-times" />
                     </button>
@@ -383,7 +411,7 @@ export default function Products() {
                     onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
                     onDragLeave={() => setDragging(false)}
                     onDrop={handleDrop}
-                    onClick={() => document.getElementById('product-image-input').click()}
+                    onClick={() => document.getElementById('product-image-input')?.click()}
                   >
                     <i className="fas fa-cloud-arrow-up" />
                     <p>Click or drag an image here to upload</p>
@@ -393,7 +421,7 @@ export default function Products() {
                       type="file"
                       accept=".png,.jpg,.jpeg"
                       style={{ display: 'none' }}
-                      onChange={(e) => { if (e.target.files.length) handleFile(e.target.files[0]); e.target.value = '' }}
+                      onChange={(e) => { if (e.target.files?.length) handleFile(e.target.files[0]); e.target.value = '' }}
                     />
                   </div>
                 )}
@@ -410,8 +438,8 @@ export default function Products() {
       {restockModal && (
         <div className="receipt-overlay" onClick={() => setRestockModal(null)}>
           <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: 380, padding: 24 }} onClick={e => e.stopPropagation()}>
-            <h5 style={{ marginBottom: 8 }}>Restock: {restockModal.name}</h5>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>Current stock: <span className="mono">{restockModal.stock_qty}</span></p>
+            <h5 style={{ marginBottom: 8 }}>Restock: {restockModal.name || 'Product'}</h5>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>Current stock: <span className="mono">{restockModal.stock_qty || 0}</span></p>
             <form onSubmit={handleRestock}>
               <label className="form-label-dark">Quantity to Add</label>
               <input type="number" min="1" className="form-control-dark mb-3" value={restockQty} onChange={e => setRestockQty(e.target.value)} required autoFocus />
@@ -434,7 +462,7 @@ export default function Products() {
               <h5 style={{ margin: 0 }}>Delete Product</h5>
             </div>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '16px 0 0' }}>
-              Are you sure you want to delete <strong style={{ color: 'var(--text-primary)' }}>{productToDelete.name}</strong>? This action cannot be undone.
+              Are you sure you want to delete <strong style={{ color: 'var(--text-primary)' }}>{productToDelete.name || 'this item'}</strong>? This action cannot be undone.
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
               <button className="btn-outline-custom" onClick={() => setProductToDelete(null)}>Cancel</button>
