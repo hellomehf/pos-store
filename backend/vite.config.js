@@ -17,6 +17,8 @@ export default defineConfig({
         tailwindcss(),
     ],
     server: {
+        // Helpful for local docker or custom local hostnames
+        host: 'localhost',
         watch: {
             ignored: ['**/storage/framework/views/**'],
         },
