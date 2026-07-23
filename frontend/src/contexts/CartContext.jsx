@@ -7,25 +7,38 @@ export function CartProvider({ children }) {
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [taxRate, setTaxRate] = useState(() => {
     const saved = localStorage.getItem('tax_rate')
-    return saved ? parseFloat(saved) || 0 : 0
+    const parsed = parseFloat(saved)
+    return !isNaN(parsed) && parsed >= 0 ? parsed : 0
   })
 
   const addItem = useCallback((product) => {
+    if (!product) return
+
+    const price = Number(product.price || 0)
+
     setItems(prev => {
       const existing = prev.find(i => i.product_id === product.id)
       if (existing) {
-        return prev.map(i =>
-          i.product_id === product.id
-            ? { ...i, quantity: i.quantity + 1, line_total: (i.quantity + 1) * i.unit_price }
-            : i
-        )
+        return prev.map(i => {
+          if (i.product_id === product.id) {
+            const newQty = (i.quantity || 0) + 1
+            const unitPrice = Number(i.unit_price || price)
+            return {
+              ...i,
+              quantity: newQty,
+              line_total: Number((newQty * unitPrice).toFixed(2))
+            }
+          }
+          return i
+        })
       }
+
       return [...prev, {
         product_id: product.id,
-        product_name: product.name,
-        unit_price: parseFloat(product.price),
+        product_name: product.name || 'Unknown Item',
+        unit_price: price,
         quantity: 1,
-        line_total: parseFloat(product.price),
+        line_total: Number(price.toFixed(2)),
       }]
     })
   }, [])
@@ -37,9 +50,15 @@ export function CartProvider({ children }) {
   const updateQuantity = useCallback((productId, delta) => {
     setItems(prev => prev.map(i => {
       if (i.product_id !== productId) return i
-      const newQty = i.quantity + delta
+      const newQty = (i.quantity || 0) + delta
       if (newQty <= 0) return null
-      return { ...i, quantity: newQty, line_total: newQty * i.unit_price }
+
+      const unitPrice = Number(i.unit_price || 0)
+      return {
+        ...i,
+        quantity: newQty,
+        line_total: Number((newQty * unitPrice).toFixed(2))
+      }
     }).filter(Boolean))
   }, [])
 
@@ -48,10 +67,12 @@ export function CartProvider({ children }) {
     setPaymentMethod('cash')
   }, [])
 
-  const subtotal = items.reduce((sum, i) => sum + i.line_total, 0)
-  const taxAmount = parseFloat((subtotal * (taxRate / 100)).toFixed(2))
-  const total = parseFloat((subtotal + taxAmount).toFixed(2))
-  const itemCount = items.reduce((sum, i) => sum + i.quantity, 0)
+  // Defensive calculations ensuring totals never return NaN
+  const subtotal = items.reduce((sum, i) => sum + Number(i?.line_total || 0), 0)
+  const currentTaxRate = Number(taxRate || 0)
+  const taxAmount = Number((subtotal * (currentTaxRate / 100)).toFixed(2))
+  const total = Number((subtotal + taxAmount).toFixed(2))
+  const itemCount = items.reduce((sum, i) => sum + Number(i?.quantity || 0), 0)
 
   return (
     <CartContext.Provider value={{
