@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Line, Bar } from 'react-chartjs-2'
+import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend, Filler } from 'chart.js'
 import api from '../api/api'
 import { useToast } from '../contexts/ToastContext'
@@ -23,18 +23,22 @@ export default function Dashboard() {
   if (loading) return <div className="d-flex justify-content-center py-5"><i className="fas fa-spinner fa-spin fa-2x" style={{ color: 'var(--text-muted)' }} /></div>
   if (!data) return null
 
+  // Safely cast numerical values
+  const todaySalesFormatted = Number(data?.today_sales || 0).toFixed(2)
+
   const statCards = [
-    { label: "Today's Sales", value: `$${data.today_sales.toFixed(2)}`, icon: 'fa-dollar-sign', color: 'var(--primary)' },
-    { label: 'Total Products', value: data.total_products, icon: 'fa-boxes-stacked', color: 'var(--primary)' },
-    { label: 'Low Stock Items', value: data.low_stock_products, icon: 'fa-exclamation-triangle', type: 'warning', color: 'var(--amber)' },
-    { label: 'Today\'s Transactions', value: data.today_transactions, icon: 'fa-receipt', color: 'var(--primary)' },
+    { label: "Today's Sales", value: `$${todaySalesFormatted}`, icon: 'fa-dollar-sign', color: 'var(--primary)' },
+    { label: 'Total Products', value: data?.total_products ?? 0, icon: 'fa-boxes-stacked', color: 'var(--primary)' },
+    { label: 'Low Stock Items', value: data?.low_stock_products ?? 0, icon: 'fa-exclamation-triangle', type: 'warning', color: 'var(--amber)' },
+    { label: "Today's Transactions", value: data?.today_transactions ?? 0, icon: 'fa-receipt', color: 'var(--primary)' },
   ]
 
+  const salesChartList = data?.sales_chart || []
   const salesChartData = {
-    labels: data.sales_chart.map(d => d.date),
+    labels: salesChartList.map(d => d?.date || ''),
     datasets: [{
       label: 'Revenue',
-      data: data.sales_chart.map(d => parseFloat(d.total)),
+      data: salesChartList.map(d => Number(d?.total || 0)),
       borderColor: '#3271a8',
       backgroundColor: 'rgba(50, 113, 168, 0.1)',
       fill: true,
@@ -53,6 +57,8 @@ export default function Dashboard() {
       y: { grid: { color: 'rgba(46,55,66,0.5)' }, ticks: { color: '#8b95a5', font: { family: 'IBM Plex Mono', size: 11 } } },
     },
   }
+
+  const recentTxList = data?.recent_transactions || []
 
   return (
     <div>
@@ -77,7 +83,7 @@ export default function Dashboard() {
           <div className="chart-container">
             <h6 style={{ marginBottom: 16 }}>Sales Overview (Last 30 Days)</h6>
             <div style={{ height: 280 }}>
-              {data.sales_chart.length > 0 ? (
+              {salesChartList.length > 0 ? (
                 <Line data={salesChartData} options={salesChartOptions} />
               ) : (
                 <div className="empty-state"><i className="fas fa-chart-line" /><p>No sales data yet</p></div>
@@ -88,9 +94,9 @@ export default function Dashboard() {
         <div className="col-lg-4">
           <div className="card-dark">
             <h6 style={{ marginBottom: 16 }}>Recent Transactions</h6>
-            {data.recent_transactions.length > 0 ? (
+            {recentTxList.length > 0 ? (
               <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                {data.recent_transactions.map(tx => (
+                {recentTxList.map(tx => (
                   <div key={tx.id} style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -103,7 +109,7 @@ export default function Dashboard() {
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.invoice_number}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tx.cashier} &middot; {tx.payment_method}</div>
                     </div>
-                    <span className="mono" style={{ fontWeight: 600, color: 'var(--success)' }}>${parseFloat(tx.total).toFixed(2)}</span>
+                    <span className="mono" style={{ fontWeight: 600, color: 'var(--success)' }}>${Number(tx?.total || 0).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
