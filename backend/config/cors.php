@@ -8,8 +8,10 @@ return [
 
     'allowed_origins' => [
         env('FRONTEND_URL', 'http://localhost:5173'),
+        'http://localhost:5173',
         'https://localhost:5173',
         'https://192.168.1.12:5173',
+        'https://pos-frontend-hj51.onrender.com', // 👈 Add your live frontend URL here
     ],
 
     'allowed_origins_patterns' => [],
