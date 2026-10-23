@@ -236,10 +236,23 @@ export default function POS() {
   const failedImages = useRef(new Set())
   const [, forceUpdate] = useReducer(x => x + 1, 0)
 
+  // --- USB Barcode Scanner refs ---
+  const scannerBuffer = useRef('')
+  const scannerLastKeyTime = useRef(0)
+  const scannerTimerRef = useRef(null)
+
   const { items = [], addItem, updateQuantity, removeItem, voidSale, paymentMethod, setPaymentMethod, taxRate, setTaxRate, subtotal = 0, taxAmount = 0, total = 0, itemCount = 0 } = useCart()
   const { user } = useAuth()
   const { storeName, storeLogo } = useStore()
   const toast = useToast()
+
+  // Keep a stable ref to products so the keydown handler always sees the latest list
+  const productsRef = useRef(products)
+  useEffect(() => { productsRef.current = products }, [products])
+
+  // Keep a stable ref to addItem so the closure in the listener doesn't go stale
+  const addItemRef = useRef(addItem)
+  useEffect(() => { addItemRef.current = addItem }, [addItem])
 
   useEffect(() => {
     Promise.all([
@@ -273,7 +286,7 @@ export default function POS() {
     if (paymentMethod === 'khqr') {
       setKhqrLoading(true)
       try {
-        await api.post('/pending-payments', {
+        const pendingRes = await api.post('/pending-payments', {
           expected_amount: total,
           currency: 'USD',
           exchange_rate: exchangeRate,
@@ -283,6 +296,7 @@ export default function POS() {
           total,
           taxRate,
           exchangeRate,
+          sessionId: pendingRes.data?.pending_payment?.session_id,
         })
         setShowKhqr(true)
       } catch (err) {
@@ -365,6 +379,87 @@ export default function POS() {
       toast.info('Sale voided')
     }
   }
+
+  // --- Web Audio beep (reused for USB scanner success) ---
+  const playBeep = useCallback((freq = 1200, duration = 0.12) => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.25, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + duration)
+    } catch { /* AudioContext not available */ }
+  }, [])
+
+  // --- USB HID Barcode Scanner: global keydown listener ---
+  useEffect(() => {
+    const INTER_KEY_THRESHOLD_MS = 50 // scanners fire keystrokes faster than this
+
+    const handleScannerKey = (e) => {
+      // Skip if any text input / textarea / select is currently focused
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      const now = Date.now()
+      const elapsed = now - scannerLastKeyTime.current
+      scannerLastKeyTime.current = now
+
+      // Clear any pending flush timer whenever a key arrives
+      if (scannerTimerRef.current) {
+        clearTimeout(scannerTimerRef.current)
+        scannerTimerRef.current = null
+      }
+
+      // If gap is too long, treat this as the start of a fresh scan
+      if (elapsed > INTER_KEY_THRESHOLD_MS && scannerBuffer.current.length > 0) {
+        scannerBuffer.current = ''
+      }
+
+      if (e.key === 'Enter') {
+        const code = scannerBuffer.current.trim()
+        scannerBuffer.current = ''
+        if (!code) return
+
+        // Look up by barcode first, then by SKU (case-insensitive)
+        const product = productsRef.current.find(
+          p =>
+            (p.barcode && p.barcode.toLowerCase() === code.toLowerCase()) ||
+            (p.sku    && p.sku.toLowerCase()     === code.toLowerCase())
+        )
+
+        if (product) {
+          addItemRef.current(product)
+          playBeep()
+          toast.success(`Added: ${product.name}`)
+        } else {
+          toast.error(`Product not found: ${code}`)
+        }
+        return
+      }
+
+      // Only accumulate printable characters (ignore Shift, Ctrl, etc.)
+      if (e.key.length === 1) {
+        scannerBuffer.current += e.key
+
+        // Safety-net flush: if Enter never comes, clear buffer after 300 ms
+        scannerTimerRef.current = setTimeout(() => {
+          scannerBuffer.current = ''
+        }, 300)
+      }
+    }
+
+    window.addEventListener('keydown', handleScannerKey)
+    return () => {
+      window.removeEventListener('keydown', handleScannerKey)
+      if (scannerTimerRef.current) clearTimeout(scannerTimerRef.current)
+    }
+  }, [playBeep, toast]) // stable refs — no re-subscriptions on product/cart changes
 
   if (loading) return <div className="d-flex justify-content-center py-5"><i className="fas fa-spinner fa-spin fa-2x" style={{ color: 'var(--text-muted)' }} /></div>
 
@@ -604,6 +699,7 @@ export default function POS() {
           currency="USD"
           exchangeRate={khqrCartSnapshot.exchangeRate}
           cartSnapshot={khqrCartSnapshot}
+          sessionId={khqrCartSnapshot.sessionId}
           onSuccess={handleKhqrComplete}
           onCancel={() => { setShowKhqr(false); setKhqrCartSnapshot(null) }}
         />

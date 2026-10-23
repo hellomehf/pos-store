@@ -18,6 +18,7 @@ export default function Products() {
   const [dragging, setDragging] = useState(false)
   const [restockModal, setRestockModal] = useState(null)
   const [restockQty, setRestockQty] = useState('')
+  const [restockNote, setRestockNote] = useState('')
   const [productToDelete, setProductToDelete] = useState(null)
   const [scannerActive, setScannerActive] = useState(false)
   const [previewSku, setPreviewSku] = useState('')
@@ -142,10 +143,14 @@ export default function Products() {
       return
     }
     try {
-      await api.post(`/products/${restockModal.id}/restock`, { quantity: qty })
+      await api.post(`/products/${restockModal.id}/restock`, {
+        quantity: qty,
+        note: restockNote.trim() || undefined,
+      })
       toast.success('Stock updated')
       setRestockModal(null)
       setRestockQty('')
+      setRestockNote('')
       load()
     } catch { toast.error('Failed to restock') }
   }
@@ -182,6 +187,16 @@ export default function Products() {
     let mounted = true
     const timer = setTimeout(async () => {
       if (!mounted || scannerRef.current) return
+      if (!window.isSecureContext) {
+        toast.error('Camera requires HTTPS. Access the app via https:// instead of http://')
+        setScannerActive(false)
+        return
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast.error('Camera API not available in this browser.')
+        setScannerActive(false)
+        return
+      }
       const scanner = new Html5Qrcode('barcode-scanner-region')
       scannerRef.current = scanner
       try {
@@ -213,6 +228,8 @@ export default function Products() {
             ? 'No camera found on this device. Please type the barcode manually.'
             : err?.name === 'NotReadableError'
             ? 'Camera is in use by another app. Please close other camera apps and try again, or type the barcode manually.'
+            : err.name === 'NotSupportedError'
+            ? 'Camera requires a secure connection (HTTPS). Access the app via https:// instead.'
             : 'Camera unavailable. Please type the barcode manually.'
           toast.error(msg)
           scannerRef.current = null
@@ -224,6 +241,8 @@ export default function Products() {
           ? 'Camera access denied. Please allow camera permission in your browser settings, or type the barcode manually.'
           : err?.name === 'NotFoundError'
           ? 'No camera found on this device. Please type the barcode manually.'
+          : err.name === 'NotSupportedError'
+          ? 'Camera requires a secure connection (HTTPS). Access the app via https:// instead.'
           : 'Camera unavailable. Please type the barcode manually.'
         toast.error(msg)
         scannerRef.current = null
@@ -239,7 +258,7 @@ export default function Products() {
     <div>
       <div className="page-header">
         <h4>Products</h4>
-        {user?.role === 'admin' && <button className="btn-primary-custom" onClick={openAdd}><i className="fas fa-plus" /> Add Product</button>}
+        {(user?.role === 'admin' || user?.role === 'stocker') && <button className="btn-primary-custom" onClick={openAdd}><i className="fas fa-plus" /> Add Product</button>}
       </div>
 
       <div className="filter-bar">
@@ -258,13 +277,14 @@ export default function Products() {
               <th>Cost</th>
               <th>Stock</th>
               <th>Date Added</th>
+              <th>Created By</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {(products || []).length === 0 ? (
-              <tr><td colSpan="10" className="text-center py-4" style={{ color: 'var(--text-muted)' }}>No products found</td></tr>
+              <tr><td colSpan="11" className="text-center py-4" style={{ color: 'var(--text-muted)' }}>No products found</td></tr>
             ) : (
               (products || []).map(p => {
                 const stockQty = Number(p?.stock_qty || 0)
@@ -290,13 +310,18 @@ export default function Products() {
                         </span>
                       </span>
                     </td>
+                    <td style={{ fontSize: 12 }}>{p.creator?.name ?? '—'}</td>
                     <td>{stockQty <= 10 ? <span className="badge-low-stock">Low Stock</span> : <span className="badge-ok">In Stock</span>}</td>
                     <td>
-                      {user?.role === 'admin' && (
+                      {(user?.role === 'admin' || user?.role === 'stocker') && (
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setRestockModal(p)}><i className="fas fa-truck" /></button>
-                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => openEdit(p)}><i className="fas fa-edit" /></button>
-                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12, color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setProductToDelete(p)}><i className="fas fa-trash" /></button>
+                          {user?.role === 'admin' && (
+                            <>
+                              <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => openEdit(p)}><i className="fas fa-edit" /></button>
+                              <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12, color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setProductToDelete(p)}><i className="fas fa-trash" /></button>
+                            </>
+                          )}
                         </div>
                       )}
                     </td>
@@ -385,12 +410,10 @@ export default function Products() {
                   <label className="form-label-dark">Selling Price ($)</label>
                   <input type="number" step="0.01" className="form-control-dark" value={form.price} onChange={e => setForm({...form, price: e.target.value})} required />
                 </div>
-                {user?.role === 'admin' && (
-                  <div className="col-12 col-sm-6">
-                    <label className="form-label-dark">Cost Price ($)</label>
-                    <input type="number" step="0.01" className="form-control-dark" value={form.cost_price} onChange={e => setForm({...form, cost_price: e.target.value})} required />
-                  </div>
-                )}
+                <div className="col-12 col-sm-6">
+                  <label className="form-label-dark">Cost Price ($)</label>
+                  <input type="number" step="0.01" className="form-control-dark" value={form.cost_price} onChange={e => setForm({...form, cost_price: e.target.value})} required />
+                </div>
               </div>
               <div className="mb-4">
                 <label className="form-label-dark">Stock Qty</label>
@@ -443,8 +466,10 @@ export default function Products() {
             <form onSubmit={handleRestock}>
               <label className="form-label-dark">Quantity to Add</label>
               <input type="number" min="1" className="form-control-dark mb-3" value={restockQty} onChange={e => setRestockQty(e.target.value)} required autoFocus />
+              <label className="form-label-dark">Note <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <input className="form-control-dark mb-3" value={restockNote} onChange={e => setRestockNote(e.target.value)} placeholder="e.g. Supplier delivery #INV-001" />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" className="btn-outline-custom" onClick={() => setRestockModal(null)}>Cancel</button>
+                <button type="button" className="btn-outline-custom" onClick={() => { setRestockModal(null); setRestockNote('') }}>Cancel</button>
                 <button type="submit" className="btn-primary-custom"><i className="fas fa-truck" /> Restock</button>
               </div>
             </form>

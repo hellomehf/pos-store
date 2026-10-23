@@ -27,7 +27,7 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => ['required', 'confirmed', Password::min(8)],
-            'role' => 'required|in:admin,cashier',
+            'role' => 'required|in:admin,cashier,stocker',
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
@@ -47,8 +47,8 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $user->id,
-            'role' => 'required|in:admin,cashier',
-            'password' => 'nullable|confirmed|' . Password::min(8)->uncompromised(),
+            'role' => 'required|in:admin,cashier,stocker',
+            'password' => ['nullable', 'confirmed', Password::min(8)],
         ]);
 
         if (empty($validated['password'])) {
@@ -77,7 +77,16 @@ class UserController extends Controller
             ], 422);
         }
 
-        $user->delete();
+        try {
+            $deleted = $user->delete();
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("User delete failed: " . $e->getMessage());
+            return response()->json(['message' => 'Delete failed: ' . $e->getMessage()], 500);
+        }
+
+        if (!$deleted) {
+            return response()->json(['message' => 'Delete returned false — user may not exist.'], 404);
+        }
 
         return response()->json(['message' => 'User deleted successfully']);
     }

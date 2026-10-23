@@ -27,5 +27,14 @@ class UserSeeder extends Seeder
                 'role' => 'cashier',
             ]
         );
+
+        User::updateOrCreate(
+            ['email' => 'stocker@pos.test'],
+            [
+                'name' => 'Sam Stocker',
+                'password' => Hash::make('password'),
+                'role' => 'stocker',
+            ]
+        );
     }
 }

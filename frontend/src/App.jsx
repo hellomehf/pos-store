@@ -10,6 +10,7 @@ import SalesHistory from './pages/SalesHistory'
 import Reports from './pages/Reports'
 import Users from './pages/Users'
 import Settings from './pages/Settings'
+import StockReports from './pages/StockReports'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -23,6 +24,27 @@ function AdminRoute({ children }) {
   return user?.role === 'admin' ? children : <Navigate to="/" />
 }
 
+function AdminOrStockerRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  return user?.role === 'admin' || user?.role === 'stocker' ? children : <Navigate to="/" />
+}
+
+function AdminOrCashierRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (user?.role === 'admin' || user?.role === 'cashier') return children
+  if (user?.role === 'stocker') return <Navigate to="/products" />
+  return <Navigate to="/" />
+}
+
+function IndexRoute() {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (user?.role === 'stocker') return <Navigate to="/products" />
+  return <Dashboard />
+}
+
 export default function App() {
   const { user, loading } = useAuth()
 
@@ -32,12 +54,13 @@ export default function App() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<Dashboard />} />
-        <Route path="pos" element={<POS />} />
-        <Route path="products" element={<AdminRoute><Products /></AdminRoute>} />
-        <Route path="categories" element={<AdminRoute><Categories /></AdminRoute>} />
-        <Route path="sales" element={<SalesHistory />} />
+        <Route index element={<IndexRoute />} />
+        <Route path="pos" element={<AdminOrCashierRoute><POS /></AdminOrCashierRoute>} />
+        <Route path="products" element={<AdminOrStockerRoute><Products /></AdminOrStockerRoute>} />
+        <Route path="categories" element={<AdminOrStockerRoute><Categories /></AdminOrStockerRoute>} />
+        <Route path="sales" element={<AdminOrCashierRoute><SalesHistory /></AdminOrCashierRoute>} />
         <Route path="reports" element={<AdminRoute><Reports /></AdminRoute>} />
+        <Route path="stock-reports" element={<AdminOrStockerRoute><StockReports /></AdminOrStockerRoute>} />
         <Route path="users" element={<AdminRoute><Users /></AdminRoute>} />
         <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
       </Route>

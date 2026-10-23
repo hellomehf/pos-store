@@ -57,7 +57,7 @@ export default function Categories() {
     <div>
       <div className="page-header">
         <h4>Categories</h4>
-        {user?.role === 'admin' && <button className="btn-primary-custom" onClick={openAdd}><i className="fas fa-plus" /> Add Category</button>}
+        {(user?.role === 'admin' || user?.role === 'stocker') && <button className="btn-primary-custom" onClick={openAdd}><i className="fas fa-plus" /> Add Category</button>}
       </div>
 
       <div className="table-wrapper">

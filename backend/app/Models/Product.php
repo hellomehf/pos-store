@@ -7,12 +7,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['category_id', 'name', 'sku', 'barcode', 'price', 'cost_price', 'stock_qty', 'image', 'is_active'])]
+#[Fillable(['category_id', 'name', 'sku', 'barcode', 'price', 'cost_price', 'stock_qty', 'image', 'is_active', 'created_by'])]
 class Product extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory;
 
     protected function casts(): array
     {
@@ -24,12 +23,25 @@ class Product extends Model
         ];
     }
 
-    public static function generateSku(string $categoryName): string
+    public static function generateSku(string $categoryName, ?int $categoryId = null): string
     {
-        $clean = preg_replace('/[^A-Za-z]/', '', $categoryName);
-        $prefix = strtoupper(substr($clean, 0, 3));
-        if (strlen($prefix) < 3) {
-            $prefix = str_pad($prefix, 3, 'X');
+        $prefix = null;
+
+        if ($categoryId) {
+            $existingSku = self::where('category_id', $categoryId)
+                ->where('sku', 'like', '___-%')
+                ->value('sku');
+            if ($existingSku && preg_match('/^([A-Z]{2,4})-/', $existingSku, $m)) {
+                $prefix = $m[1];
+            }
+        }
+
+        if (!$prefix) {
+            $clean = preg_replace('/[^A-Za-z]/', '', $categoryName);
+            $prefix = strtoupper(substr($clean, 0, 3));
+            if (strlen($prefix) < 3) {
+                $prefix = str_pad($prefix, 3, 'X');
+            }
         }
 
         $lastSku = self::where('sku', 'like', "$prefix-%")
@@ -42,12 +54,24 @@ class Product extends Model
             $next = 1;
         }
 
-        return $prefix . '-' . str_pad($next, 3, '0', STR_PAD_LEFT);
+        $sku = $prefix . '-' . str_pad($next, 3, '0', STR_PAD_LEFT);
+
+        while (self::where('sku', $sku)->exists()) {
+            $next++;
+            $sku = $prefix . '-' . str_pad($next, 3, '0', STR_PAD_LEFT);
+        }
+
+        return $sku;
     }
 
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function saleItems(): HasMany

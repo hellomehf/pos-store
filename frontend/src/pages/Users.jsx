@@ -78,7 +78,7 @@ export default function Users() {
                 <td style={{ fontWeight: 500 }}>{u.name}</td>
                 <td style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
                 <td>
-                  <span className={u.role === 'admin' ? 'badge-admin' : 'badge-cashier'}>{u.role}</span>
+                  <span className={u.role === 'admin' ? 'badge-admin' : u.role === 'stocker' ? 'badge-stocker' : 'badge-cashier'}>{u.role}</span>
                 </td>
                 <td style={{ fontSize: 13 }}>{new Date(u.created_at).toLocaleDateString()}</td>
                 <td>
@@ -110,6 +110,7 @@ export default function Users() {
                 <label className="form-label-dark">Role</label>
                 <select className="form-control-dark" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
                   <option value="cashier">Cashier</option>
+                  <option value="stocker">Stocker</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>

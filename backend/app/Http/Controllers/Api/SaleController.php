@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendSaleReceipt;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
@@ -163,6 +164,8 @@ class SaleController extends Controller
         });
 
         $sale->load(['user', 'items.product']);
+
+        SendSaleReceipt::dispatch($sale->id);
 
         return response()->json($sale, 201);
     }

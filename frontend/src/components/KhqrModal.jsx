@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
+import api from '../api/api'
 
-export default function KhqrModal({ amount, currency, exchangeRate, cartSnapshot, onSuccess, onCancel }) {
+export default function KhqrModal({ amount, currency, exchangeRate, cartSnapshot, sessionId, onSuccess, onCancel }) {
   const [imgLoaded, setImgLoaded] = useState(false)
   const [imgFailed, setImgFailed] = useState(false)
   const [phase, setPhase] = useState('idle')
@@ -14,6 +15,14 @@ export default function KhqrModal({ amount, currency, exchangeRate, cartSnapshot
     setPhase('verifying')
 
     await new Promise(r => setTimeout(r, 1500))
+
+    if (sessionId) {
+      try {
+        await api.post(`/pending-payments/${sessionId}/confirm`)
+      } catch {
+        // non-blocking: the sale is created on the POS side regardless
+      }
+    }
 
     if (completedRef.current) return
     completedRef.current = true
