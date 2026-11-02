@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendSaleReceipt;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Setting;
@@ -60,7 +61,9 @@ class SaleController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => 'required|numeric|min:0.000001',
+            'items.*.unit_id' => 'nullable|exists:units_of_measure,id',
+            'items.*.product_unit_id' => 'nullable|exists:product_units,id',
             'payment_method' => 'required|in:cash,card,khqr',
             'tendered_amount' => 'required_if:payment_method,cash|nullable|numeric|min:0',
             'tax_rate' => 'nullable|numeric|min:0|max:100',
@@ -74,7 +77,7 @@ class SaleController extends Controller
         $itemsData = [];
 
         foreach ($validated['items'] as $item) {
-            $product = Product::find($item['product_id']);
+            $product = Product::with('productUnits.unit')->find($item['product_id']);
 
             if (! $product) {
                 return response()->json([
@@ -83,23 +86,62 @@ class SaleController extends Controller
                 ], 422);
             }
 
-            if ($product->stock_qty < $item['quantity']) {
+            $qty = (float)$item['quantity'];
+            $conversion = 1;
+            $unitId = null;
+            $unitName = null;
+            $unitPrice = (float)$product->price;
+            $costPrice = (float)$product->cost_price;
+
+            if (!empty($item['product_unit_id'])) {
+                $pu = $product->productUnits->firstWhere('id', $item['product_unit_id']);
+                if ($pu) {
+                    $conversion = (float)$pu->conversion_factor ?: 1;
+                    $unitId = $pu->unit_id;
+                    $unitName = $pu->unit->name ?? null;
+                    $unitPrice = $pu->selling_price !== null ? (float)$pu->selling_price : $unitPrice;
+                    $costPrice = $pu->purchase_cost !== null ? (float)$pu->purchase_cost : $costPrice;
+                }
+            } elseif (!empty($item['unit_id'])) {
+                $pu = $product->productUnits->firstWhere('unit_id', $item['unit_id']);
+                if ($pu) {
+                    $conversion = (float)$pu->conversion_factor ?: 1;
+                    $unitId = $pu->unit_id;
+                    $unitName = $pu->unit->name ?? null;
+                    $unitPrice = $pu->selling_price !== null ? (float)$pu->selling_price : $unitPrice;
+                    $costPrice = $pu->purchase_cost !== null ? (float)$pu->purchase_cost : $costPrice;
+                }
+            }
+
+            $baseQty = (int)round($qty * $conversion);
+            if ($baseQty < 1) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Insufficient stock for \"{$product->name}\". Available: {$product->stock_qty}, requested: {$item['quantity']}",
+                    'message' => "Invalid quantity for \"{$product->name}\".",
                 ], 422);
             }
 
-            $lineTotal = $product->price * $item['quantity'];
+            if ($product->stock_qty < $baseQty) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Insufficient stock for \"{$product->name}\". Available: {$product->stock_qty}, requested: {$baseQty}",
+                ], 422);
+            }
+
+            $lineTotal = round($unitPrice * $qty, 2);
             $subtotal += $lineTotal;
 
             $itemsData[] = [
                 'product_id' => $product->id,
                 'product_name' => $product->name,
-                'unit_price' => $product->price,
-                'cost_price' => $product->cost_price,
-                'quantity' => $item['quantity'],
+                'unit_price' => $unitPrice,
+                'cost_price' => $costPrice,
+                'quantity' => $qty,
                 'line_total' => $lineTotal,
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'conversion_factor' => $conversion,
+                'base_qty' => $baseQty,
             ];
         }
 
@@ -127,13 +169,13 @@ class SaleController extends Controller
         $sale = DB::transaction(function () use ($validated, $subtotal, $taxRate, $taxAmount, $total, $tendered, $change, $totalKhr, $tenderedKhr, $changeKhr, $itemsData, $cashierId, $exchangeRate, $productIds) {
             $lockedProducts = Product::whereIn('id', $productIds)->lockForUpdate()->get();
 
-            foreach ($validated['items'] as $item) {
-                $locked = $lockedProducts->firstWhere('id', $item['product_id']);
-                if (! $locked || $locked->stock_qty < $item['quantity']) {
+            foreach ($itemsData as $itemData) {
+                $locked = $lockedProducts->firstWhere('id', $itemData['product_id']);
+                if (! $locked || $locked->stock_qty < $itemData['base_qty']) {
                     throw new \App\Exceptions\InsufficientStockException(
-                        $locked?->name ?? "Product #{$item['product_id']}",
+                        $locked?->name ?? "Product #{$itemData['product_id']}",
                         $locked->stock_qty ?? 0,
-                        $item['quantity']
+                        $itemData['base_qty']
                     );
                 }
             }
@@ -155,9 +197,11 @@ class SaleController extends Controller
             ]);
 
             foreach ($itemsData as $itemData) {
+                $baseQty = $itemData['base_qty'];
+                unset($itemData['base_qty']);
                 SaleItem::create(array_merge($itemData, ['sale_id' => $sale->id]));
                 Product::where('id', $itemData['product_id'])
-                    ->decrement('stock_qty', $itemData['quantity']);
+                    ->decrement('stock_qty', $baseQty);
             }
 
             return $sale;

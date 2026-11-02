@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['category_id', 'name', 'sku', 'barcode', 'price', 'cost_price', 'stock_qty', 'image', 'is_active', 'created_by'])]
+#[Fillable(['category_id', 'name', 'sku', 'barcode', 'price', 'cost_price', 'stock_qty', 'image', 'is_active', 'created_by', 'base_unit_id'])]
 class Product extends Model
 {
     use HasFactory;
@@ -77,6 +77,21 @@ class Product extends Model
     public function saleItems(): HasMany
     {
         return $this->hasMany(SaleItem::class);
+    }
+
+    public function productUnits(): HasMany
+    {
+        return $this->hasMany(ProductUnit::class);
+    }
+
+    public function baseUnit(): BelongsTo
+    {
+        return $this->belongsTo(UnitOfMeasure::class, 'base_unit_id');
+    }
+
+    public function getBaseUnitRecord()
+    {
+        return $this->productUnits()->where('is_base_unit', true)->first();
     }
 
     public function isLowStock(int $threshold = 10): bool

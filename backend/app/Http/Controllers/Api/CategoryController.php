@@ -51,7 +51,7 @@ class CategoryController extends Controller
 
     public function destroy(Category $category): JsonResponse
     {
-        $productCount = $category->products()->withoutTrashed()->count();
+        $productCount = $category->products()->count();
 
         if ($productCount > 0) {
             return response()->json([

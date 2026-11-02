@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\RestockReportController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\StoreSettingController;
 use App\Http\Controllers\Api\TelegramWebhookController;
+use App\Http\Controllers\Api\UnitOfMeasureController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,9 +36,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Read-only — accessible by all authenticated users
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/categories/{category}', [CategoryController::class, 'show']);
+    Route::get('/units', [UnitOfMeasureController::class, 'index']);
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/preview-sku', [ProductController::class, 'previewSku']);
     Route::get('/products/{product}', [ProductController::class, 'show']);
+    Route::get('/products/{product}/units', [ProductController::class, 'units']);
 
     Route::get('/sales', [SaleController::class, 'index']);
     Route::get('/sales/{sale}', [SaleController::class, 'show']);
@@ -48,7 +51,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Create & restock — admin and stocker
     Route::middleware('role:admin,stocker')->group(function () {
         Route::post('/categories', [CategoryController::class, 'store']);
+        Route::post('/units', [UnitOfMeasureController::class, 'store']);
         Route::post('/products', [ProductController::class, 'store']);
+        Route::post('/products/{product}/units', [ProductController::class, 'saveUnits']);
         Route::post('products/{product}/restock', [ProductController::class, 'restock']);
         Route::get('/reports/restock', [RestockReportController::class, 'index']);
         Route::get('/reports/restock/pdf', [RestockReportController::class, 'exportPdf']);

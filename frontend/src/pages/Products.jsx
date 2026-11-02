@@ -12,16 +12,21 @@ export default function Products() {
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({ name: '', sku: '', barcode: '', price: '', cost_price: '', stock_qty: '', category_id: '' })
+  const [form, setForm] = useState({ name: '', sku: '', barcode: '', price: '', cost_price: '', stock_qty: '', category_id: '', base_unit_id: '' })
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
   const [dragging, setDragging] = useState(false)
   const [restockModal, setRestockModal] = useState(null)
   const [restockQty, setRestockQty] = useState('')
   const [restockNote, setRestockNote] = useState('')
+  const [restockUnits, setRestockUnits] = useState([])
+  const [restockUnit, setRestockUnit] = useState('')
   const [productToDelete, setProductToDelete] = useState(null)
   const [scannerActive, setScannerActive] = useState(false)
   const [previewSku, setPreviewSku] = useState('')
+  // UOM state
+  const [units, setUnits] = useState([])
+  const [productUnits, setProductUnits] = useState([])
   const scannerRef = useRef(null)
   const toast = useToast()
 
@@ -43,12 +48,18 @@ export default function Products() {
 
   useEffect(() => { load() }, [search])
 
+  // Load available units of measure on mount
+  useEffect(() => {
+    api.get('/units').then(r => setUnits(r.data || [])).catch(() => {})
+  }, [])
+
   const openAdd = () => {
     setEditing(null)
-    setForm({ name: '', sku: '', barcode: '', price: '', cost_price: '', stock_qty: '', category_id: '' })
+    setForm({ name: '', sku: '', barcode: '', price: '', cost_price: '', stock_qty: '', category_id: '', base_unit_id: '' })
     setImageFile(null)
     setImagePreview('')
     setPreviewSku('')
+    setProductUnits([])
     setShowModal(true)
   }
 
@@ -69,11 +80,63 @@ export default function Products() {
       price: p.price ?? '',
       cost_price: p.cost_price ?? '',
       stock_qty: p.stock_qty ?? '',
-      category_id: p.category_id ?? ''
+      category_id: p.category_id ?? '',
+      base_unit_id: p.base_unit_id ?? '',
     })
     setImageFile(null)
     setImagePreview(p.image ? `/storage/${p.image}` : '')
+    setProductUnits([])
+    // Load existing product units
+    api.get(`/products/${p.id}/units`).then(r => {
+      setProductUnits(r.data || [])
+    }).catch(() => {})
     setShowModal(true)
+  }
+
+  // UOM handler functions
+  const addProductUnit = () => setProductUnits(prev => [...prev, {
+    unit_id: '', conversion_factor: 1, purchase_cost: '', selling_price: '',
+    is_base_unit: prev.length === 0 && !form.base_unit_id, is_purchase_unit: true, is_selling_unit: true
+  }])
+  const removeProductUnit = (idx) => {
+    setProductUnits(prev => {
+      const removed = prev[idx]
+      const next = prev.filter((_, i) => i !== idx)
+      if (removed && (removed.is_base_unit || String(removed.unit_id) === String(form.base_unit_id))) {
+        const otherBase = next.find(u => u.is_base_unit)
+        setForm(f => ({ ...f, base_unit_id: otherBase?.unit_id ? String(otherBase.unit_id) : '' }))
+      }
+      return next
+    })
+  }
+  const updateProductUnit = (idx, field, value) => {
+    setProductUnits(prev => {
+      const next = prev.map((pu, i) => {
+        if (i !== idx) {
+          if (field === 'is_base_unit' && value) {
+            return { ...pu, is_base_unit: false }
+          }
+          return pu
+        }
+        if (field === 'is_base_unit' && value) {
+          return { ...pu, is_base_unit: true, conversion_factor: 1 }
+        }
+        return { ...pu, [field]: value }
+      })
+
+      if (field === 'is_base_unit') {
+        if (value) {
+          const unitId = next[idx]?.unit_id
+          setForm(f => ({ ...f, base_unit_id: unitId ? String(unitId) : '' }))
+        } else if (String(next[idx]?.unit_id) === String(form.base_unit_id)) {
+          setForm(f => ({ ...f, base_unit_id: '' }))
+        }
+      } else if (field === 'unit_id' && next[idx]?.is_base_unit) {
+        setForm(f => ({ ...f, base_unit_id: value ? String(value) : '' }))
+      }
+
+      return next
+    })
   }
 
   const handleSave = async (e) => {
@@ -87,16 +150,31 @@ export default function Products() {
       fd.append('cost_price', form.cost_price || 0)
       fd.append('stock_qty', form.stock_qty || 0)
       fd.append('category_id', form.category_id || '')
+      fd.append('base_unit_id', form.base_unit_id || '')
       if (imageFile) fd.append('image', imageFile)
 
+      let savedProduct
       if (editing) {
         fd.append('_method', 'PUT')
-        await api.post(`/products/${editing.id}`, fd)
+        const res = await api.post(`/products/${editing.id}`, fd)
+        savedProduct = res.data?.product || res.data || { id: editing.id }
         toast.success('Product updated')
       } else {
-        await api.post('/products', fd)
+        const res = await api.post('/products', fd)
+        savedProduct = res.data?.product || res.data
         toast.success('Product created')
       }
+
+      // Always sync product units with backend so removals/updates are applied
+      const productId = savedProduct?.id || editing?.id
+      if (productId) {
+        try {
+          await api.post(`/products/${productId}/units`, { units: productUnits })
+        } catch {
+          toast.error('Product saved but failed to save unit conversions')
+        }
+      }
+
       setShowModal(false)
       stopScanner()
       load()
@@ -134,23 +212,43 @@ export default function Products() {
     } catch { toast.error('Failed to delete') }
   }
 
+  const loadRestockUnits = async (productId) => {
+    try {
+      const res = await api.get(`/products/${productId}/units`)
+      const u = res.data || []
+      setRestockUnits(u)
+      const base = u.find(x => x.is_base_unit) || u[0]
+      if (base) setRestockUnit(base.id)
+      else setRestockUnit('')
+    } catch {
+      setRestockUnits([])
+      setRestockUnit('')
+    }
+  }
+
   const handleRestock = async (e) => {
     e.preventDefault()
     if (!restockModal?.id) return
-    const qty = parseInt(restockQty, 10)
+    const qty = parseFloat(restockQty)
     if (isNaN(qty) || qty <= 0) {
       toast.error('Please enter a valid restock quantity')
       return
     }
     try {
-      await api.post(`/products/${restockModal.id}/restock`, {
+      const payload = {
         quantity: qty,
         note: restockNote.trim() || undefined,
-      })
+      }
+      if (restockUnit) {
+        payload.product_unit_id = restockUnit
+      }
+      await api.post(`/products/${restockModal.id}/restock`, payload)
       toast.success('Stock updated')
       setRestockModal(null)
       setRestockQty('')
       setRestockNote('')
+      setRestockUnits([])
+      setRestockUnit('')
       load()
     } catch { toast.error('Failed to restock') }
   }
@@ -315,7 +413,7 @@ export default function Products() {
                     <td>
                       {(user?.role === 'admin' || user?.role === 'stocker') && (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => setRestockModal(p)}><i className="fas fa-truck" /></button>
+                          <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => { setRestockModal(p); setRestockQty(''); setRestockNote(''); setRestockUnits([]); setRestockUnit(''); loadRestockUnits(p.id); }}><i className="fas fa-truck" /></button>
                           {user?.role === 'admin' && (
                             <>
                               <button className="btn-outline-custom" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => openEdit(p)}><i className="fas fa-edit" /></button>
@@ -449,6 +547,107 @@ export default function Products() {
                   </div>
                 )}
               </div>
+
+              {/* Base Unit Selector */}
+              <div style={{ marginBottom: 12 }}>
+                <label className="form-label-dark">Base Unit</label>
+                <select
+                  className="form-control-dark"
+                  value={form.base_unit_id || ''}
+                  onChange={e => {
+                    const newBaseId = e.target.value
+                    setForm(f => ({ ...f, base_unit_id: newBaseId }))
+                    setProductUnits(prev => {
+                      if (!newBaseId) {
+                        return prev.map(u => ({ ...u, is_base_unit: false }))
+                      }
+                      const exists = prev.some(u => String(u.unit_id) === String(newBaseId))
+                      if (exists) {
+                        return prev.map(u => ({
+                          ...u,
+                          is_base_unit: String(u.unit_id) === String(newBaseId),
+                          conversion_factor: String(u.unit_id) === String(newBaseId) ? 1 : u.conversion_factor,
+                        }))
+                      }
+                      const oldBaseIdx = prev.findIndex(u => u.is_base_unit)
+                      if (oldBaseIdx !== -1) {
+                        return prev.map((u, i) => i === oldBaseIdx
+                          ? { ...u, unit_id: newBaseId, is_base_unit: true, conversion_factor: 1 }
+                          : { ...u, is_base_unit: false }
+                        )
+                      }
+                      return prev
+                    })
+                  }}
+                >
+                  <option value="">-- None --</option>
+                  {units.map(u => <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>)}
+                </select>
+              </div>
+
+              {/* Product Units Table */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label className="form-label-dark" style={{ margin: 0 }}>Unit Conversions</label>
+                  <button type="button" className="btn-outline-custom" style={{ padding: '3px 10px', fontSize: 12 }} onClick={addProductUnit}>
+                    <i className="fas fa-plus" /> Add Unit
+                  </button>
+                </div>
+                {productUnits.length > 0 && (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '4px 6px', textAlign: 'left' }}>Unit</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right' }}>Factor</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right' }}>Buy Cost</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right' }}>Sell Price</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'center' }}>Base</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'center' }}>Buy</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'center' }}>Sell</th>
+                          <th style={{ padding: '4px 6px' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productUnits.map((pu, idx) => (
+                          <tr key={idx} style={{ borderTop: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '4px 4px' }}>
+                              <select className="form-control-dark" style={{ padding: '3px 6px', fontSize: 12 }} value={pu.unit_id || ''} onChange={e => updateProductUnit(idx, 'unit_id', e.target.value)}>
+                                <option value="">Select</option>
+                                {units.map(u => <option key={u.id} value={u.id}>{u.abbreviation}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input type="number" className="form-control-dark" style={{ padding: '3px 6px', fontSize: 12, width: 60 }} value={pu.conversion_factor || 1} min="0.000001" step="any" onChange={e => updateProductUnit(idx, 'conversion_factor', e.target.value)} />
+                            </td>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input type="number" className="form-control-dark" style={{ padding: '3px 6px', fontSize: 12, width: 70 }} value={pu.purchase_cost || ''} min="0" step="0.01" placeholder="0.00" onChange={e => updateProductUnit(idx, 'purchase_cost', e.target.value)} />
+                            </td>
+                            <td style={{ padding: '4px 4px' }}>
+                              <input type="number" className="form-control-dark" style={{ padding: '3px 6px', fontSize: 12, width: 70 }} value={pu.selling_price || ''} min="0" step="0.01" placeholder="0.00" onChange={e => updateProductUnit(idx, 'selling_price', e.target.value)} />
+                            </td>
+                            <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                              <input type="checkbox" checked={!!pu.is_base_unit} onChange={e => updateProductUnit(idx, 'is_base_unit', e.target.checked)} />
+                            </td>
+                            <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                              <input type="checkbox" checked={!!pu.is_purchase_unit} onChange={e => updateProductUnit(idx, 'is_purchase_unit', e.target.checked)} />
+                            </td>
+                            <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                              <input type="checkbox" checked={!!pu.is_selling_unit} onChange={e => updateProductUnit(idx, 'is_selling_unit', e.target.checked)} />
+                            </td>
+                            <td style={{ padding: '4px 4px' }}>
+                              <button type="button" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '2px 4px' }} onClick={() => removeProductUnit(idx)}>
+                                <i className="fas fa-times" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button type="button" className="btn-outline-custom" onClick={() => { stopScanner(); setShowModal(false) }}>Cancel</button>
                 <button type="submit" className="btn-primary-custom">{editing ? 'Update' : 'Create'}</button>
@@ -464,12 +663,30 @@ export default function Products() {
             <h5 style={{ marginBottom: 8 }}>Restock: {restockModal.name || 'Product'}</h5>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>Current stock: <span className="mono">{restockModal.stock_qty || 0}</span></p>
             <form onSubmit={handleRestock}>
+              {restockUnits.length > 0 && (
+                <>
+                  <label className="form-label-dark">Restock In</label>
+                  <select className="form-control-dark mb-3" value={restockUnit} onChange={e => setRestockUnit(e.target.value)}>
+                    {restockUnits.map(u => (
+                      <option key={u.id} value={u.id}>{u.unit?.name || u.unit?.abbreviation} {u.conversion_factor && Number(u.conversion_factor) !== 1 ? `(x${u.conversion_factor})` : ''}</option>
+                    ))}
+                  </select>
+                </>
+              )}
               <label className="form-label-dark">Quantity to Add</label>
-              <input type="number" min="1" className="form-control-dark mb-3" value={restockQty} onChange={e => setRestockQty(e.target.value)} required autoFocus />
+              <input type="number" min="0.001" step="0.001" className="form-control-dark mb-3" value={restockQty} onChange={e => setRestockQty(e.target.value)} required autoFocus />
+              {restockUnits.length > 0 && restockQty && restockUnit && (() => {
+                const pu = restockUnits.find(u => String(u.id) === String(restockUnit))
+                if (pu && pu.conversion_factor) {
+                  const base = (parseFloat(restockQty) * parseFloat(pu.conversion_factor))
+                  return <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>= {Math.round(base)} base units</p>
+                }
+                return null
+              })()}
               <label className="form-label-dark">Note <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
               <input className="form-control-dark mb-3" value={restockNote} onChange={e => setRestockNote(e.target.value)} placeholder="e.g. Supplier delivery #INV-001" />
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button type="button" className="btn-outline-custom" onClick={() => { setRestockModal(null); setRestockNote('') }}>Cancel</button>
+                <button type="button" className="btn-outline-custom" onClick={() => { setRestockModal(null); setRestockNote(''); setRestockUnits([]); setRestockUnit(''); }}>Cancel</button>
                 <button type="submit" className="btn-primary-custom"><i className="fas fa-truck" /> Restock</button>
               </div>
             </form>

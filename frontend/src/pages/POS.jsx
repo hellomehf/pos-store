@@ -62,7 +62,7 @@ function ReceiptModal({ sale, onClose, onPrint }) {
       <hr />
       <div class="col-header"><span>ITEM</span><span>QTY</span><span>PRICE</span></div>
       <hr style="margin: 2px 0 6px" />
-      ${(sale?.items || []).map(item => `<div class="item-row"><span>${item.product_name || ''}</span><span>${item.quantity || 0}</span><span>$${Number(item.line_total || 0).toFixed(2)}</span></div>`).join('')}
+      ${(sale?.items || []).map(item => `<div class="item-row"><span>${item.product_name || ''}${item.unit_name ? ' (' + item.unit_name + ')' : ''}</span><span>${item.quantity || 0}</span><span>$${Number(item.line_total || 0).toFixed(2)}</span></div>`).join('')}
       <hr />
       <div class="summary-row"><span>Subtotal</span><span>$${Number(sale?.subtotal || 0).toFixed(2)}</span></div>
       <div class="summary-row"><span>Tax (${Number(sale?.tax_rate || 0).toFixed(0)}%)</span><span>$${Number(sale?.tax_amount || 0).toFixed(2)}</span></div>
@@ -104,7 +104,7 @@ function ReceiptModal({ sale, onClose, onPrint }) {
           <div className="receipt-items">
             {(sale?.items || []).map((item, i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 50px 80px', gap: 2, alignItems: 'center', padding: '3px 0', fontFamily: 'var(--font-mono)', fontSize: 13 }}>
-                <span style={{ textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_name}</span>
+                <span style={{ textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_name}{item.unit_name ? ` (${item.unit_name})` : ''}</span>
                 <span style={{ textAlign: 'center' }}>{item.quantity}</span>
                 <span style={{ textAlign: 'right' }}>${Number(item.line_total || 0).toFixed(2)}</span>
               </div>
@@ -292,7 +292,7 @@ export default function POS() {
           exchange_rate: exchangeRate,
         })
         setKhqrCartSnapshot({
-          items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+          items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity, product_unit_id: i.product_unit_id, unit_id: i.unit_id })),
           total,
           taxRate,
           exchangeRate,
@@ -316,7 +316,12 @@ export default function POS() {
     setProcessing(true)
     try {
       const payload = {
-        items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+        items: items.map(i => ({ 
+          product_id: i.product_id, 
+          quantity: i.quantity,
+          product_unit_id: i.product_unit_id || undefined,
+          unit_id: i.unit_id || undefined,
+        })),
         payment_method: paymentMethod,
         tendered_amount: paymentMethod === 'cash' ? parseFloat(tenderedUSD.toFixed(2)) : total,
         tax_rate: taxRate,
@@ -344,7 +349,12 @@ export default function POS() {
     setProcessing(true)
     try {
       const payload = {
-        items: snapshot.items,
+        items: snapshot.items.map(i => ({ 
+          product_id: i.product_id, 
+          quantity: i.quantity,
+          product_unit_id: i.product_unit_id || undefined,
+          unit_id: i.unit_id || undefined,
+        })),
         payment_method: 'khqr',
         tendered_amount: snapshot.total,
         tax_rate: snapshot.taxRate,
@@ -426,18 +436,50 @@ export default function POS() {
         scannerBuffer.current = ''
         if (!code) return
 
-        // Look up by barcode first, then by SKU (case-insensitive)
-        const product = productsRef.current.find(
+        // Look up by product-level barcode/SKU first, then by product_unit barcode
+        let product = productsRef.current.find(
           p =>
             (p.barcode && p.barcode.toLowerCase() === code.toLowerCase()) ||
             (p.sku    && p.sku.toLowerCase()     === code.toLowerCase())
         )
+        let productUnit = null
 
         if (product) {
-          addItemRef.current(product)
+          // Default: use the base unit or the first selling unit
+          const pUnits = product.product_units || product.productUnits || []
+          const baseUnit = pUnits.find(u => u.is_base_unit || (product.base_unit_id && u.unit_id === product.base_unit_id)) || pUnits.find(u => u.is_selling_unit !== false)
+          if (baseUnit) productUnit = baseUnit
+        } else {
+          // Check product_unit-level barcodes
+          for (const p of productsRef.current) {
+            const pUnits = p.product_units || p.productUnits || []
+            const pu = pUnits.find(u => u.barcode && u.barcode.toLowerCase() === code.toLowerCase())
+            if (pu) {
+              product = p
+              productUnit = pu
+              break
+            }
+          }
+        }
+
+        if (product) {
+          if (productUnit) {
+            addItemRef.current(product, {
+              product_unit_id: productUnit.id,
+              unit_id: productUnit.unit_id,
+              unit_name: productUnit.unit?.name || productUnit.unit?.abbreviation || null,
+              unit_price: productUnit.selling_price !== null && productUnit.selling_price !== undefined
+                ? Number(productUnit.selling_price)
+                : Number(product.price || 0),
+              conversion_factor: Number(productUnit.conversion_factor || 1),
+            })
+          } else {
+            addItemRef.current(product)
+          }
           playBeep()
           toast.success(`Added: ${product.name}`)
         } else {
+          playBeep(400, 0.3)
           toast.error(`Product not found: ${code}`)
         }
         return
@@ -572,7 +614,45 @@ export default function POS() {
               <div
                 key={product.id}
                 className="product-card"
-                onClick={() => addItem(product)}
+                onClick={() => {
+                  const units = product.product_units || product.productUnits || []
+                  const selling = units.filter(u => u.is_selling_unit !== false)
+                  if (selling.length > 1) {
+                    const pu = selling.find(u => u.is_base_unit || (product.base_unit_id && u.unit_id === product.base_unit_id)) || selling[0]
+                    addItem(product, {
+                      product_unit_id: pu.id,
+                      unit_id: pu.unit_id,
+                      unit_name: pu.unit?.name || pu.unit?.abbreviation,
+                      unit_price: pu.selling_price !== null && pu.selling_price !== undefined ? pu.selling_price : product.price,
+                      conversion_factor: pu.conversion_factor || 1,
+                    })
+                  } else if (selling.length === 1) {
+                    const pu = selling[0]
+                    addItem(product, {
+                      product_unit_id: pu.id,
+                      unit_id: pu.unit_id,
+                      unit_name: pu.unit?.name || pu.unit?.abbreviation,
+                      unit_price: pu.selling_price !== null && pu.selling_price !== undefined ? pu.selling_price : product.price,
+                      conversion_factor: pu.conversion_factor || 1,
+                    })
+                  } else {
+                    {(() => {
+                      const units = product.product_units || product.productUnits || []
+                      const selling = units.filter(u => u.is_selling_unit !== false)
+                      if (selling.length > 0) {
+                        const pu = selling.find(u => u.is_base_unit || (product.base_unit_id && u.unit_id === product.base_unit_id)) || selling[0]
+                        return addItem(product, {
+                          product_unit_id: pu.id,
+                          unit_id: pu.unit_id,
+                          unit_name: pu.unit?.name || pu.unit?.abbreviation,
+                          unit_price: pu.selling_price !== null && pu.selling_price !== undefined ? pu.selling_price : product.price,
+                          conversion_factor: pu.conversion_factor || 1,
+                        })
+                      }
+                      return addItem(product)
+                    })()}
+                  }
+                }}
               >
                 <div className="product-card-image">
                   {product.image && !failedImages.current.has(product.id) ? (
@@ -596,7 +676,7 @@ export default function POS() {
               </div>
             ))}
             {filteredProducts.length === 0 && (
-              <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+              <div className="empty-state">
                 <i className="fas fa-box-open" />
                 <p>No products found</p>
               </div>
@@ -626,7 +706,7 @@ export default function POS() {
                   <div className="cart-item" key={item.product_id}>
                     <div className="cart-item-info">
                       <div className="cart-item-name">{item.product_name}</div>
-                      <div className="cart-item-price">${Number(item.unit_price || 0).toFixed(2)} each</div>
+                      <div className="cart-item-price">${Number(item.unit_price || 0).toFixed(2)}${item.unit_name ? ` / ${item.unit_name}` : ' each'}</div>
                     </div>
                     <div className="qty-stepper">
                       <button onClick={() => updateQuantity(item.product_id, -1)}><i className="fas fa-minus" /></button>
