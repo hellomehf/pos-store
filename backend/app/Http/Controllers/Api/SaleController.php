@@ -64,7 +64,7 @@ class SaleController extends Controller
             'items.*.quantity' => 'required|numeric|min:0.000001',
             'items.*.unit_id' => 'nullable|exists:units_of_measure,id',
             'items.*.product_unit_id' => 'nullable|exists:product_units,id',
-            'payment_method' => 'required|in:cash,card,khqr',
+            'payment_method' => 'required|in:cash,card,khqr,aba',
             'tendered_amount' => 'required_if:payment_method,cash|nullable|numeric|min:0',
             'tax_rate' => 'nullable|numeric|min:0|max:100',
             'exchange_rate' => 'nullable|integer|min:1',

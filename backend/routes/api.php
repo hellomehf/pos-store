@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\AbaWebhookController;
+use App\Http\Controllers\Api\Aba\AbaCallbackController;
+use App\Http\Controllers\Api\Aba\AbaCheckTransactionController;
+use App\Http\Controllers\Api\Aba\AbaCreatePaymentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\DailyReportController;
@@ -26,6 +29,9 @@ Route::get('/health', fn () => response()->json([
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'handle']);
 Route::post('/aba/webhook', [AbaWebhookController::class, 'handleWebhook']);
+
+// ABA PayWay Checkout 2.0 — callback (return_url) is public; must be whitelisted by IP in production.
+Route::post('/aba/callback', AbaCallbackController::class);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -87,4 +93,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/pending-payments/{sessionId}/confirm', [PendingPaymentController::class, 'confirm']);
 
     Route::get('/settings/store', [StoreSettingController::class, 'show']);
+
+    // ABA PayWay Checkout 2.0 — authenticated routes
+    Route::post('/aba/create-payment', AbaCreatePaymentController::class);
+    Route::post('/aba/check-transaction', AbaCheckTransactionController::class);
 });

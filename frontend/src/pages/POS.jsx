@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useReducer } from 'react'
+﻿import { useState, useEffect, useCallback, useRef, useReducer } from 'react'
 import api from '../api/api'
 import { useCart } from '../contexts/CartContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useStore } from '../contexts/StoreContext'
 import { useToast } from '../contexts/ToastContext'
 import KhqrModal from '../components/KhqrModal'
+import AbaPaymentModal from '../components/AbaPaymentModal'
 
 const formatKHR = (usd, rate) => Math.round((usd || 0) * (rate || 4100)).toLocaleString()
 const formatDual = (usd, rate) => `$${Number(usd || 0).toFixed(2)} / ${formatKHR(usd, rate)}៛`
@@ -21,6 +22,7 @@ function ReceiptModal({ sale, onClose, onPrint }) {
 
   const formatPaymentMethod = (method) => {
     if (method === 'khqr') return 'KHQR'
+    if (method === 'aba') return 'ABA PayWay'
     return method ? method.charAt(0).toUpperCase() + method.slice(1) : ''
   }
 
@@ -233,6 +235,8 @@ export default function POS() {
   const [showKhqr, setShowKhqr] = useState(false)
   const [khqrCartSnapshot, setKhqrCartSnapshot] = useState(null)
   const [khqrLoading, setKhqrLoading] = useState(false)
+  const [showAba, setShowAba] = useState(false)
+  const [abaOrderId, setAbaOrderId] = useState(null)
   const failedImages = useRef(new Set())
   const [, forceUpdate] = useReducer(x => x + 1, 0)
 
@@ -282,6 +286,34 @@ export default function POS() {
 
   const handleCharge = async () => {
     if (items.length === 0) return toast.error('Cart is empty')
+
+    if (paymentMethod === 'aba') {
+      if (items.length === 0) return toast.error('Cart is empty')
+      setProcessing(true)
+      try {
+        // Create a pending sale first (payment_method=aba), then open ABA modal.
+        const payload = {
+          items: items.map(i => ({
+            product_id: i.product_id,
+            quantity: i.quantity,
+            product_unit_id: i.product_unit_id || undefined,
+            unit_id: i.unit_id || undefined,
+          })),
+          payment_method: 'aba',
+          tendered_amount: total,
+          tax_rate: taxRate,
+          exchange_rate: exchangeRate,
+        }
+        const res = await api.post('/sales', payload)
+        setAbaOrderId(res.data.id)
+        setShowAba(true)
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to create sale')
+      } finally {
+        setProcessing(false)
+      }
+      return
+    }
 
     if (paymentMethod === 'khqr') {
       setKhqrLoading(true)
@@ -770,6 +802,23 @@ export default function POS() {
           sale={completedSale}
           onClose={() => setCompletedSale(null)}
           onPrint={handleNewSale}
+        />
+      )}
+
+      {showAba && abaOrderId && (
+        <AbaPaymentModal
+          orderId={abaOrderId}
+          amount={total}
+          onSuccess={(_tranId) => {
+            setShowAba(false)
+            setAbaOrderId(null)
+            voidSale()
+            setTendered('0')
+            setTenderCurrency('USD')
+            toast.success('ABA payment confirmed!')
+            api.get('/products').then(r => setProducts(r?.data || []))
+          }}
+          onCancel={() => { setShowAba(false); setAbaOrderId(null) }}
         />
       )}
 
