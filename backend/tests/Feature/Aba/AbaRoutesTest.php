@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Aba;
 
+use PHPUnit\Framework\Attributes\Test;
+
 use App\Models\AbaPayment;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Services\Aba\AbaConfig;
 use App\Services\Aba\AbaPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -28,6 +31,8 @@ class AbaRoutesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        AbaConfig::reset();
 
         // Set env so AbaConfig doesn't throw.
         config([
@@ -76,7 +81,7 @@ class AbaRoutesTest extends TestCase
     // POST /api/aba/create-payment
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function create_payment_returns_signed_fields(): void
     {
         $response = $this->actingAs($this->cashier)
@@ -95,7 +100,7 @@ class AbaRoutesTest extends TestCase
         $this->assertSame(0, $data['payment_gate']);
     }
 
-    /** @test */
+    #[Test]
     public function create_payment_persists_pending_record(): void
     {
         $this->actingAs($this->cashier)
@@ -108,7 +113,7 @@ class AbaRoutesTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function create_payment_ignores_client_amount(): void
     {
         // The client sends a spoofed amount — the endpoint must use the DB amount.
@@ -122,7 +127,7 @@ class AbaRoutesTest extends TestCase
         $this->assertSame('5.00', $response->json('fields.amount'));
     }
 
-    /** @test */
+    #[Test]
     public function create_payment_requires_valid_order_id(): void
     {
         $this->actingAs($this->cashier)
@@ -130,7 +135,7 @@ class AbaRoutesTest extends TestCase
             ->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function create_payment_requires_authentication(): void
     {
         $this->postJson('/api/aba/create-payment', ['order_id' => $this->sale->id])
@@ -141,7 +146,7 @@ class AbaRoutesTest extends TestCase
     // POST /api/aba/check-transaction
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function check_transaction_returns_paid_for_approved_response(): void
     {
         Http::fake([
@@ -174,7 +179,7 @@ class AbaRoutesTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function check_transaction_returns_failed_for_declined_response(): void
     {
         Http::fake([
@@ -198,7 +203,7 @@ class AbaRoutesTest extends TestCase
         $response->assertOk()->assertJsonFragment(['status' => 'FAILED']);
     }
 
-    /** @test */
+    #[Test]
     public function check_transaction_returns_pending_when_in_progress(): void
     {
         Http::fake([
@@ -222,7 +227,7 @@ class AbaRoutesTest extends TestCase
         $response->assertOk()->assertJsonFragment(['status' => 'PENDING']);
     }
 
-    /** @test */
+    #[Test]
     public function check_transaction_returns_502_on_timeout(): void
     {
         Http::fake([
@@ -247,7 +252,7 @@ class AbaRoutesTest extends TestCase
     // Idempotency: second "paid" check must not double-update
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function second_paid_check_does_not_re_update_payment_or_sale(): void
     {
         Http::fake([
@@ -285,7 +290,7 @@ class AbaRoutesTest extends TestCase
         return base64_encode(hash_hmac('sha512', $payload, $apiKey, true));
     }
 
-    /** @test */
+    #[Test]
     public function callback_with_valid_hmac_and_paid_transaction_marks_payment(): void
     {
         Http::fake([
@@ -312,7 +317,7 @@ class AbaRoutesTest extends TestCase
         ])->assertOk()->assertJsonFragment(['result' => 'PAID']);
     }
 
-    /** @test */
+    #[Test]
     public function callback_with_invalid_hmac_is_rejected(): void
     {
         $payload = json_encode(['tran_id' => 'PCBK0000001', 'status' => '0']);
@@ -323,7 +328,7 @@ class AbaRoutesTest extends TestCase
         ])->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function callback_with_missing_tran_id_returns_400(): void
     {
         $payload = json_encode(['status' => '0']); // no tran_id
@@ -338,7 +343,7 @@ class AbaRoutesTest extends TestCase
     // Error code 4 — duplicate tran_id
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function duplicate_tran_id_causes_db_unique_constraint_error(): void
     {
         AbaPayment::create([

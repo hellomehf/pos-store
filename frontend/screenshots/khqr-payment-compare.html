@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ABA KHQR payment modal — template6_color</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #12161c;
+        color: #e8ecef;
+        font: 14px/1.55 Inter, system-ui, sans-serif;
+      }
+      h1 { margin: 0 0 6px; font-size: 22px; }
+      h2 { margin: 28px 0 12px; font-size: 16px; }
+      p.lead { margin: 0 0 24px; color: #8b95a5; max-width: 980px; }
+      .grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+      figure {
+        margin: 0;
+        background: #1b212a;
+        border: 1px solid #2e3742;
+        border-radius: 12px;
+        padding: 12px;
+        width: min(100%, 760px);
+      }
+      figure img { display: block; width: 100%; height: auto; border-radius: 8px; }
+      figcaption { margin-top: 10px; color: #b8c0cb; font-size: 12px; }
+      figcaption strong { color: #e8ecef; display: block; margin-bottom: 3px; }
+      .ok { color: #4ade80; }
+      .warn { color: #fbbf24; }
+      code { color: #93c5fd; }
+      .specs {
+        max-width: 1100px;
+        margin: 24px 0 0;
+        padding: 16px 18px;
+        border: 1px solid #2e3742;
+        border-radius: 12px;
+        background: #1b212a;
+      }
+      .specs ul { margin: 0; padding-left: 20px; }
+      .specs li + li { margin-top: 6px; }
+      .states { width: min(100%, 1100px); }
+    </style>
+  </head>
+  <body>
+    <h1>ABA KHQR “Scan to pay” modal</h1>
+    <p class="lead">
+      The real PayWay sandbox <code>template6_color</code> image is used in both captures.
+      The modal is a single 520 px column: header/status pill, the PayWay image at its
+      natural 443 × 301 size on a white panel, amount, reference, expiry, then the actions.
+      The image is not cropped or stretched; its rendered aspect ratio is exactly its natural
+      1.47 aspect ratio. The QR itself is 144 × 144 in the delivered image.
+    </p>
+    <div class="grid">
+      <figure>
+        <img src="khqr-payment-1920x1080.png" alt="KHQR payment modal at 1920 by 1080" />
+        <figcaption>
+          <strong>1920 × 1080</strong>
+          Single-column 520 × 686 modal at y=197. No page scroll and no modal scroll.
+          The 443 × 301 image sits fully inside the 470 × 325 white panel; both actions are visible.
+          <span class="ok">pyzbar decoded the 144 × 144 QR from this screenshot at (1002, 362); payload matches the generated KHQR.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="khqr-payment-1366x768.png" alt="KHQR payment modal at 1366 by 768" />
+        <figcaption>
+          <strong>1366 × 768</strong>
+          Same 520 × 686 modal fits at y=41. No page scroll and no modal scroll.
+          The image is still 443 × 301 with no crop or stretch; both actions are visible.
+          <span class="ok">pyzbar decoded the 144 × 144 QR from this screenshot at (725, 206); payload matches the generated KHQR.</span>
+        </figcaption>
+      </figure>
+    </div>
+
+    <div class="specs">
+      <h2>What changed</h2>
+      <ul>
+        <li><code>generate-qr</code> now sends <code>qr_image_template: "template6_color"</code> as the last signed QR field, after <code>lifetime</code>.</li>
+        <li><code>AbaConfig::QR_IMAGE_TEMPLATE</code> is the only production template literal; the env/config template override was removed.</li>
+        <li><code>lifetime</code> is enforced to at least 3 minutes in the config, <code>AbaConfig</code>, and <code>AbaQrService</code>.</li>
+        <li>Fresh sandbox smoke test after the change (separate from the captures above): <code>POST /generate-qr</code> returned HTTP <code>200</code> with PayWay <code>status.code = "0"</code> (<code>Success.</code>), <code>tran_id = K261106022521501765</code>; the returned 443 x 301 image decodes to a 144 x 144 QR ending <code>630418C5</code>.</li>
+        <li>The presentation component is the scoped <code>frontend/src/components/ABA/KhqrPaymentModal.jsx</code> + <code>.css</code>; <code>KhqrModal</code> still owns polling, callbacks, success delay, and order completion.</li>
+        <li>No polling, callback, or order logic changed. Props passed from <code>POS.jsx</code> are unchanged.</li>
+      </ul>
+    </div>
+
+    <h2>End states (1366 × 768 preview)</h2>
+    <figure class="states">
+      <img src="khqr-payment-states.png" alt="Paid, QR expired, and Payment failed end states" />
+      <figcaption>
+        In each finished state the image is dimmed (<code>opacity: 0.22</code> + grayscale) and replaced visually by a centered overlay.
+        <strong>Paid</strong> shows <code>Paid</code> and a full-width <code>Done</code> button.
+        <strong>QR expired</strong> shows <code>QR expired</code> and disables <code>Check payment</code>.
+        <strong>Payment failed</strong> shows <code>Payment failed</code> and disables <code>Check payment</code>.
+        The expiry row and ABA Mobile deeplink are hidden once finished.
+      </figcaption>
+    </figure>
+
+    <p class="lead" style="margin-top: 22px;">
+      <span class="warn">Scan verification note:</span>
+      a physical phone scan is not available in this environment, so the full screenshots were decoded
+      with pyzbar as the scan proxy. Both decoded payloads exactly match the sandbox <code>qr_string</code>
+      (ending <code>63046BD6</code>). ZXing does not detect the dense, 144 px <code>template6_color</code>
+      QR (even from a 4× crop); pyzbar is the evidence used here.
+    </p>
+  </body>
+</html>

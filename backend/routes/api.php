@@ -4,6 +4,7 @@ use App\Http\Controllers\AbaWebhookController;
 use App\Http\Controllers\Api\Aba\AbaCallbackController;
 use App\Http\Controllers\Api\Aba\AbaCheckTransactionController;
 use App\Http\Controllers\Api\Aba\AbaCreatePaymentController;
+use App\Http\Controllers\Api\Aba\AbaQrController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\DailyReportController;
@@ -97,4 +98,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // ABA PayWay Checkout 2.0 — authenticated routes
     Route::post('/aba/create-payment', AbaCreatePaymentController::class);
     Route::post('/aba/check-transaction', AbaCheckTransactionController::class);
+
+    // ABA PayWay dynamic QR (KHQR) — authenticated routes
+    Route::post('/aba/create-qr', [AbaQrController::class, 'create']);
+    Route::get('/aba/qr-status/{sessionId}', [AbaQrController::class, 'status']);
 });

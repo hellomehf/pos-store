@@ -323,12 +323,22 @@ export default function POS() {
           currency: 'USD',
           exchange_rate: exchangeRate,
         })
+        const sessionId = pendingRes.data?.pending_payment?.session_id
+
+        // Ask the backend for a real ABA PayWay KHQR (qrString + qrImage).
+        const qrRes = await api.post('/aba/create-qr', { session_id: sessionId })
+
         setKhqrCartSnapshot({
           items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity, product_unit_id: i.product_unit_id, unit_id: i.unit_id })),
           total,
           taxRate,
           exchangeRate,
-          sessionId: pendingRes.data?.pending_payment?.session_id,
+          sessionId,
+          tranId: qrRes.data?.tran_id,
+          qrImage: qrRes.data?.qr_image,
+          qrString: qrRes.data?.qr_string,
+          deeplink: qrRes.data?.deeplink,
+          expiresAt: qrRes.data?.expires_at,
         })
         setShowKhqr(true)
       } catch (err) {
@@ -829,6 +839,11 @@ export default function POS() {
           exchangeRate={khqrCartSnapshot.exchangeRate}
           cartSnapshot={khqrCartSnapshot}
           sessionId={khqrCartSnapshot.sessionId}
+          tranId={khqrCartSnapshot.tranId}
+          qrImage={khqrCartSnapshot.qrImage}
+          deeplink={khqrCartSnapshot.deeplink}
+          expiresAt={khqrCartSnapshot.expiresAt}
+          storeName={storeName}
           onSuccess={handleKhqrComplete}
           onCancel={() => { setShowKhqr(false); setKhqrCartSnapshot(null) }}
         />

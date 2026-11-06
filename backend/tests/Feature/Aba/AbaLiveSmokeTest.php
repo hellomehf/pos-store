@@ -2,13 +2,17 @@
 
 namespace Tests\Feature\Aba;
 
+use PHPUnit\Framework\Attributes\Test;
+
 use App\Models\AbaPayment;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Services\Aba\AbaConfig;
 use App\Services\Aba\AbaPaymentService;
+use App\Services\Aba\AbaQrService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -19,8 +23,9 @@ use Tests\TestCase;
  * Skipped unless PAYWAY_LIVE_TEST=1.
  * Uses the sandbox key from ABA/README.md and real HTTP calls.
  *
- * Run with:
- *   PAYWAY_LIVE_TEST=1 php artisan test --filter=AbaLiveSmokeTest
+ * Run with (PowerShell):
+ *   $env:PAYWAY_LIVE_TEST='1'
+ *   php -d extension=pdo_sqlite -d extension=sqlite3 vendor/bin/phpunit tests/Feature/Aba/AbaLiveSmokeTest.php
  */
 class AbaLiveSmokeTest extends TestCase
 {
@@ -28,11 +33,15 @@ class AbaLiveSmokeTest extends TestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
-
+        // Skip before the app boots / RefreshDatabase migrates — these tests
+        // would otherwise try to use the test DB even when disabled.
         if (!env('PAYWAY_LIVE_TEST')) {
             $this->markTestSkipped('Set PAYWAY_LIVE_TEST=1 to run live sandbox tests.');
         }
+
+        parent::setUp();
+
+        AbaConfig::reset();
 
         config([
             'services.aba_payway.merchant_id'  => env('PAYWAY_MERCHANT_ID', 'ec480150'),
@@ -45,7 +54,7 @@ class AbaLiveSmokeTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_endpoint_returns_200_with_checkout_html(): void
     {
         $cashier  = User::factory()->create(['role' => 'admin']);
@@ -90,5 +99,23 @@ class AbaLiveSmokeTest extends TestCase
 
         $this->assertSame(200, $response->status(), 'PayWay sandbox must return 200');
         $this->assertStringContainsString('html', strtolower($response->header('Content-Type')));
+    }
+
+    #[Test]
+    public function qr_api_returns_a_real_aba_khqr_for_the_sale_amount(): void
+    {
+        $service = new AbaQrService();
+        $qr      = $service->createQr(0.10, 'USD');
+
+        $this->assertStringStartsWith('000201', $qr['qr_string'], 'qrString must be an EMVCo KHQR payload');
+        $this->assertStringStartsWith('data:image/png;base64,', $qr['qr_image']);
+        $this->assertNotEmpty($qr['tran_id']);
+        $this->assertLessThanOrEqual(20, strlen($qr['tran_id']));
+        $this->assertSame('USD', strtoupper((string) $qr['currency']));
+
+        // PayWay must know the transaction created by the QR API.
+        $result = $service->checkRaw($qr['tran_id']);
+
+        $this->assertContains($result['status'], ['PENDING', 'PAID']);
     }
 }

@@ -41,18 +41,21 @@ return [
     ],
 
     'aba' => [
-        'merchant_id'          => env('ABA_MERCHANT_ID', '1522146'),
+        'merchant_id' => env('ABA_MERCHANT_ID', '1522146'),
     ],
 
     // ABA PayWay Checkout 2.0 — loaded by App\Services\Aba\AbaConfig
     'aba_payway' => [
-        'merchant_id'          => env('PAYWAY_MERCHANT_ID'),
-        'api_key'              => env('PAYWAY_API_KEY'),
-        'purchase_url'         => env('PAYWAY_PURCHASE_URL', 'https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/purchase'),
-        'env'                  => env('PAYWAY_ENV', 'sandbox'),
-        'return_url'           => env('PAYWAY_RETURN_URL', ''),
-        'cancel_url'           => env('PAYWAY_CANCEL_URL', ''),
+        'merchant_id' => env('PAYWAY_MERCHANT_ID'),
+        'api_key' => env('PAYWAY_API_KEY'),
+        'purchase_url' => env('PAYWAY_PURCHASE_URL', 'https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/purchase'),
+        'env' => env('PAYWAY_ENV', 'sandbox'),
+        'return_url' => env('PAYWAY_RETURN_URL', ''),
+        'cancel_url' => env('PAYWAY_CANCEL_URL', ''),
         'continue_success_url' => env('PAYWAY_CONTINUE_SUCCESS_URL', ''),
+        // QR API (Display dynamic QR) — see ABA QR API docs.
+        'qr_lifetime' => max(3, (int) env('PAYWAY_QR_LIFETIME', 15)),
+        'qr_callback_url' => env('PAYWAY_QR_CALLBACK_URL', ''),
     ],
 
     'telegram' => [

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ABA KHQR modal — scale fix before / after</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #12161c;
+        color: #e8ecef;
+        font: 14px/1.5 Inter, system-ui, sans-serif;
+      }
+      h1 { margin: 0 0 6px; font-size: 22px; }
+      p.lead { margin: 0 0 24px; color: #8b95a5; max-width: 960px; }
+      .grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+      figure {
+        margin: 0;
+        background: #1b212a;
+        border: 1px solid #2e3742;
+        border-radius: 12px;
+        padding: 12px;
+        width: min(100%, 660px);
+      }
+      figure img { display: block; width: 100%; height: auto; border-radius: 8px; }
+      figcaption { margin-top: 10px; color: #b8c0cb; font-size: 12px; }
+      figcaption strong { color: #e8ecef; display: block; margin-bottom: 3px; }
+      .ok { color: #4ade80; }
+      .bad { color: #f87171; }
+      code { color: #93c5fd; }
+    </style>
+  </head>
+  <body>
+    <h1>ABA KHQR “Scan to Pay” modal — scale fix</h1>
+    <p class="lead">
+      Captured at exact viewport sizes with Chrome DevTools Protocol. Before: transparent
+      wrapper, width-based image and inner scrolling. After: white fit-content wrapper,
+      height-based image, 420px modal and no scrolling at 1080p. Decode checks used
+      <code>html5-qrcode</code> (ZXing) against the real sandbox QR payload.
+    </p>
+    <div class="grid">
+      <figure>
+        <img src="khqr-fix-before-1920x1080.png" alt="Before at 1920 by 1080" />
+        <figcaption>
+          <strong>Before — 1920 × 1080</strong>
+          Transparent wrapper, 320 × 648 image, body scrolls (881px content in a 768px
+          body). Amount and buttons are pinned but the QR floats on the dark modal.
+          <span class="ok">Decode: passed</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="khqr-fix-after-1920x1080.png" alt="After at 1920 by 1080" />
+        <figcaption>
+          <strong>After — 1920 × 1080</strong>
+          White 214 × 456 wrapper, 212 × 440 image at its natural aspect, 420px modal.
+          Body is 689px with 689px content — <span class="ok">no inner scroll</span>.
+          Amount Due, Cancel and Check Payment are visible. <span class="ok">Decode: passed</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="khqr-fix-before-1366x768.png" alt="Before at 1366 by 768" />
+        <figcaption>
+          <strong>Before — 1366 × 768</strong>
+          The 320 × 540 image box is letterboxed by <code>object-fit: contain</code>,
+          stretching the apparent gap and making the QR too small to decode.
+          <span class="bad">Decode: failed</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="khqr-fix-after-1366x768.png" alt="After at 1366 by 768" />
+        <figcaption>
+          <strong>After — 1366 × 768</strong>
+          White 195 × 415 wrapper, 193 × 399 image at its natural aspect. The footer is
+          pinned, so Amount Due, Cancel and Check Payment stay visible. The short-screen
+          body scrolls only when needed. <span class="ok">Decode: passed</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="khqr-fix-after-1366x768-scrolled.png" alt="After at 1366 by 768 scrolled to QR" />
+        <figcaption>
+          <strong>After — 1366 × 768, scrolled</strong>
+          Full QR card and bottom branding visible; the footer stays pinned.
+          <span class="ok">Decode: passed</span>
+        </figcaption>
+      </figure>
+    </div>
+  </body>
+</html>

@@ -199,33 +199,7 @@ class AbaPaymentService
      */
     public function mapStatus(array $body): string
     {
-        // PayWay check-transaction-2 returns status.code 0 = success.
-        $code = $body['status']['code'] ?? $body['status_code'] ?? null;
-
-        if ($code !== null && (int) $code !== 0) {
-            // Non-zero top-level status = API-level error (not payment status)
-            return AbaPayment::STATUS_PENDING;
-        }
-
-        // Payment-level status
-        $paymentStatus = strtoupper((string) (
-            $body['data']['payment_status']
-            ?? $body['payment_status']
-            ?? ''
-        ));
-        $paymentCode = $body['data']['payment_status_code']
-            ?? $body['payment_status_code']
-            ?? null;
-
-        if ($paymentStatus === 'APPROVED' || (is_numeric($paymentCode) && (int) $paymentCode === 0)) {
-            return AbaPayment::STATUS_PAID;
-        }
-
-        if (in_array($paymentStatus, ['DECLINED', 'FAILED', 'CANCELLED', 'REJECTED'], true)) {
-            return AbaPayment::STATUS_FAILED;
-        }
-
-        return AbaPayment::STATUS_PENDING;
+        return AbaStatus::map($body);
     }
 
     /**

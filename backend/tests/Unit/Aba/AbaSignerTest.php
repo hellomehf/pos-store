@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Aba;
 
+use App\Services\Aba\AbaConfig;
 use App\Services\Aba\AbaSigner;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,7 +21,7 @@ class AbaSignerTest extends TestCase
     // reqTime
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function req_time_is_14_digits_utc(): void
     {
         $t = AbaSigner::reqTime();
@@ -35,60 +37,60 @@ class AbaSignerTest extends TestCase
     // purchaseHash — known vector
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function purchase_hash_matches_known_vector(): void
     {
         // Fixed inputs — the expected hash is pre-computed with:
         //   echo -n "20261105100000ec480150T17000000000.10USD" | openssl dgst -sha512 -hmac "ff6c403b..." -binary | base64
         $fields = [
-            'req_time'    => '20261105100000',
+            'req_time' => '20261105100000',
             'merchant_id' => 'ec480150',
-            'tran_id'     => 'T17000000000',
-            'amount'      => '0.10',
-            'currency'    => 'USD',
+            'tran_id' => 'T17000000000',
+            'amount' => '0.10',
+            'currency' => 'USD',
         ];
 
         $hash = AbaSigner::purchaseHash($fields, self::API_KEY);
 
         // Independently computed expected value
-        $rawStr  = '20261105100000' . 'ec480150' . 'T17000000000' . '0.10'
-                 . '' . '' . '' . '' . '' . '' . '' . '' . '' . '' . '' . ''
-                 . 'USD'
-                 . '' . '' . '' . '' . '' . '' . '' . '';
+        $rawStr = '20261105100000'.'ec480150'.'T17000000000'.'0.10'
+                 .''.''.''.''.''.''.''.''.''.''.''.''
+                 .'USD'
+                 .''.''.''.''.''.''.''.'';
         $expected = base64_encode(hash_hmac('sha512', $rawStr, self::API_KEY, true));
 
         $this->assertSame($expected, $hash);
     }
 
-    /** @test */
+    #[Test]
     public function purchase_hash_field_order_matches_spec(): void
     {
         // All 24 hash-order fields present — hash must be stable regardless of PHP array order.
         $fields1 = [
-            'req_time'            => '20261105100000',
-            'merchant_id'         => 'ec480150',
-            'tran_id'             => 'TID001',
-            'amount'              => '5.00',
-            'items'               => '[{"name":"Widget","quantity":"1","price":"5.00"}]',
-            'shipping'            => '0.00',
-            'firstname'           => 'Jane',
-            'lastname'            => 'Doe',
-            'email'               => 'jane@example.com',
-            'phone'               => '0123456789',
-            'type'                => '',
-            'payment_option'      => '',
-            'return_url'          => 'https://example.com/return',
-            'cancel_url'          => 'https://example.com/cancel',
-            'continue_success_url'=> '',
-            'return_deeplink'     => '',
-            'currency'            => 'USD',
-            'custom_fields'       => '',
-            'return_params'       => '',
-            'payout'              => '',
-            'lifetime'            => '',
-            'additional_params'   => '',
-            'google_pay_token'    => '',
-            'skip_success_page'   => '',
+            'req_time' => '20261105100000',
+            'merchant_id' => 'ec480150',
+            'tran_id' => 'TID001',
+            'amount' => '5.00',
+            'items' => '[{"name":"Widget","quantity":"1","price":"5.00"}]',
+            'shipping' => '0.00',
+            'firstname' => 'Jane',
+            'lastname' => 'Doe',
+            'email' => 'jane@example.com',
+            'phone' => '0123456789',
+            'type' => '',
+            'payment_option' => '',
+            'return_url' => 'https://example.com/return',
+            'cancel_url' => 'https://example.com/cancel',
+            'continue_success_url' => '',
+            'return_deeplink' => '',
+            'currency' => 'USD',
+            'custom_fields' => '',
+            'return_params' => '',
+            'payout' => '',
+            'lifetime' => '',
+            'additional_params' => '',
+            'google_pay_token' => '',
+            'skip_success_page' => '',
         ];
 
         // Shuffle the array order (PHP arrays are ordered, but the hash must not care).
@@ -100,16 +102,16 @@ class AbaSignerTest extends TestCase
         $this->assertSame($hash1, $hash2, 'Hash must depend on field ORDER, not insertion order');
     }
 
-    /** @test */
+    #[Test]
     public function unsent_fields_contribute_empty_string(): void
     {
         // Minimal fields — missing ones should contribute '' to the hash string.
         $minimal = [
-            'req_time'    => '20261105120000',
+            'req_time' => '20261105120000',
             'merchant_id' => 'ec480150',
-            'tran_id'     => 'TID002',
-            'amount'      => '1.00',
-            'currency'    => 'USD',
+            'tran_id' => 'TID002',
+            'amount' => '1.00',
+            'currency' => 'USD',
         ];
 
         // Build the expected raw string manually.
@@ -123,20 +125,83 @@ class AbaSignerTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // qrHash — field order and known vector
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function qr_hash_uses_the_qr_api_field_order(): void
+    {
+        $fields = [
+            'req_time' => '20261105100000',
+            'merchant_id' => 'ec480150',
+            'tran_id' => 'K1700000000',
+            'amount' => '1.00',
+            'currency' => 'USD',
+            'purchase_type' => 'purchase',
+            'payment_option' => 'abapay_khqr',
+            'lifetime' => 15,
+            'qr_image_template' => AbaConfig::QR_IMAGE_TEMPLATE,
+            // Fields sent by the gateway but not part of the QR hash must be ignored.
+            'hash' => 'ignore-me',
+        ];
+
+        // Fixed template6_color vector. The signed string is:
+        // 20261105100000ec480150K17000000001.00purchaseabapay_khqrUSD15template6_color
+        $expected = '8MPeaaRf0+NhbIkshrbpdY0C3p8vhVDDHbXP3U9CTVYDOGY0PX/rqLR6xIuc2dKt4+pcM0DZn19nfWHNdZVk1A==';
+
+        $this->assertSame(
+            $expected,
+            AbaSigner::qrHash($fields, self::API_KEY),
+            'qr_image_template must be the last QR hash field, after lifetime'
+        );
+    }
+
+    #[Test]
+    public function qr_image_template_is_template6_color_and_is_hashed_last(): void
+    {
+        $order = AbaSigner::QR_HASH_ORDER;
+
+        $this->assertSame('template6_color', AbaConfig::QR_IMAGE_TEMPLATE);
+        $this->assertSame('lifetime', $order[count($order) - 2]);
+        $this->assertSame('qr_image_template', $order[count($order) - 1]);
+    }
+
+    #[Test]
+    public function qr_hash_is_stable_regardless_of_input_array_order(): void
+    {
+        $fields = [
+            'req_time' => '20261105100000',
+            'merchant_id' => 'ec480150',
+            'tran_id' => 'K1700000000',
+            'amount' => '1.00',
+            'currency' => 'USD',
+            'purchase_type' => 'purchase',
+            'payment_option' => 'abapay_khqr',
+            'lifetime' => 15,
+            'qr_image_template' => AbaConfig::QR_IMAGE_TEMPLATE,
+        ];
+
+        $this->assertSame(
+            AbaSigner::qrHash($fields, self::API_KEY),
+            AbaSigner::qrHash(array_reverse($fields, true), self::API_KEY)
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // checkTransactionHash — known vector
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function check_transaction_hash_covers_exactly_three_fields(): void
     {
-        $reqTime    = '20261105100000';
+        $reqTime = '20261105100000';
         $merchantId = 'ec480150';
-        $tranId     = 'TID001';
+        $tranId = 'TID001';
 
         $hash = AbaSigner::checkTransactionHash($reqTime, $merchantId, $tranId, self::API_KEY);
 
         $expected = base64_encode(
-            hash_hmac('sha512', $reqTime . $merchantId . $tranId, self::API_KEY, true)
+            hash_hmac('sha512', $reqTime.$merchantId.$tranId, self::API_KEY, true)
         );
 
         $this->assertSame($expected, $hash);
@@ -146,30 +211,30 @@ class AbaSignerTest extends TestCase
     // verifyCallbackHmac
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function callback_hmac_verification_passes_for_valid_signature(): void
     {
         $payload = '{"tran_id":"TID001","status":"0"}';
-        $header  = base64_encode(hash_hmac('sha512', $payload, self::API_KEY, true));
+        $header = base64_encode(hash_hmac('sha512', $payload, self::API_KEY, true));
 
         $this->assertTrue(AbaSigner::verifyCallbackHmac($payload, $header, self::API_KEY));
     }
 
-    /** @test */
+    #[Test]
     public function callback_hmac_verification_fails_for_tampered_payload(): void
     {
-        $payload  = '{"tran_id":"TID001","status":"0"}';
-        $header   = base64_encode(hash_hmac('sha512', $payload, self::API_KEY, true));
+        $payload = '{"tran_id":"TID001","status":"0"}';
+        $header = base64_encode(hash_hmac('sha512', $payload, self::API_KEY, true));
         $tampered = '{"tran_id":"TID001","status":"0","amount":"999.00"}';
 
         $this->assertFalse(AbaSigner::verifyCallbackHmac($tampered, $header, self::API_KEY));
     }
 
-    /** @test */
+    #[Test]
     public function callback_hmac_verification_fails_for_wrong_key(): void
     {
-        $payload  = '{"tran_id":"TID001","status":"0"}';
-        $correct  = base64_encode(hash_hmac('sha512', $payload, self::API_KEY, true));
+        $payload = '{"tran_id":"TID001","status":"0"}';
+        $correct = base64_encode(hash_hmac('sha512', $payload, self::API_KEY, true));
 
         $this->assertFalse(AbaSigner::verifyCallbackHmac($payload, $correct, 'wrong-key'));
     }
@@ -178,14 +243,14 @@ class AbaSignerTest extends TestCase
     // tran_id constraints (service helper — tested via pure string logic)
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function tran_id_is_at_most_20_characters(): void
     {
         // Simulate the generateTranId logic from AbaPaymentService for a range of order IDs
         foreach ([1, 999, 9999999] as $orderId) {
-            $ms     = (int) round(microtime(true) * 1000);
+            $ms = (int) round(microtime(true) * 1000);
             $suffix = substr((string) $ms, -10);
-            $id     = substr('P' . $orderId . $suffix, 0, 20);
+            $id = substr('P'.$orderId.$suffix, 0, 20);
 
             $this->assertLessThanOrEqual(20, strlen($id), "tran_id for order {$orderId} exceeds 20 chars: {$id}");
         }

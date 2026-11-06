@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Aba;
 
 use App\Http\Controllers\Controller;
+use App\Models\AbaPayment;
+use App\Models\PendingPayment;
 use App\Services\Aba\AbaConfig;
 use App\Services\Aba\AbaSigner;
 use App\Services\Aba\AbaPaymentService;
@@ -80,6 +82,23 @@ class AbaCallbackController extends Controller
 
             // Return 200 so PayWay doesn't retry endlessly; we'll reconcile later.
             return response()->json(['status' => 0, 'message' => 'Acknowledged (check failed)']);
+        }
+
+        // Dynamic QR transactions are not in aba_payments — they belong to a
+        // pending_payments row. Update that row when the callback confirms it.
+        if ($result['payment'] === null) {
+            $pending = PendingPayment::where('payment_reference', $tranId)->first();
+
+            if ($pending) {
+                if ($result['status'] === AbaPayment::STATUS_PAID && $pending->status !== 'completed') {
+                    $pending->update([
+                        'status'      => 'completed',
+                        'sender_name' => $pending->sender_name ?: 'ABA KHQR',
+                    ]);
+                } elseif ($result['status'] === AbaPayment::STATUS_FAILED && $pending->status === 'pending') {
+                    $pending->update(['status' => 'failed']);
+                }
+            }
         }
 
         return response()->json([

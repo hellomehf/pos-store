@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useStore } from '../contexts/StoreContext'
@@ -90,7 +90,15 @@ export default function Layout() {
         )}
 
         <div className={isPOS ? 'pos-page-wrapper' : 'page-content'}>
-          <Outlet />
+          <Suspense
+            fallback={
+              <div className="d-flex align-items-center justify-content-center" style={{ minHeight: 240, color: 'var(--text-muted)' }}>
+                <i className="fas fa-spinner fa-spin fa-2x" />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>

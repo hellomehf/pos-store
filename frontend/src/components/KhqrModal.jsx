@@ -1,184 +1,167 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import api from '../api/api'
+import KhqrPaymentModal from './ABA/KhqrPaymentModal'
 
-export default function KhqrModal({ amount, currency, exchangeRate, cartSnapshot, sessionId, onSuccess, onCancel }) {
-  const [imgLoaded, setImgLoaded] = useState(false)
-  const [imgFailed, setImgFailed] = useState(false)
-  const [phase, setPhase] = useState('idle')
+const POLL_INTERVAL_MS = 3000
+
+/**
+ * Displays the real ABA PayWay KHQR returned by the backend and polls
+ * /aba/qr-status/{sessionId} until ABA reports the transaction as PAID.
+ * The visual presentation lives in KhqrPaymentModal.
+ */
+export default function KhqrModal({
+  amount,
+  currency = 'USD',
+  exchangeRate,
+  cartSnapshot,
+  sessionId,
+  tranId,
+  qrImage,
+  deeplink,
+  expiresAt,
+  storeName,
+  onSuccess,
+  onCancel,
+}) {
+  const [phase, setPhase] = useState('waiting') // waiting | success | error | expired
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState('')
+
   const completedRef = useRef(false)
+  const successTimerRef = useRef(null)
   const onSuccessRef = useRef(onSuccess)
   onSuccessRef.current = onSuccess
 
-  const handleConfirm = async () => {
-    if (phase !== 'idle') return
-    completedRef.current = false
-    setPhase('verifying')
-
-    await new Promise(r => setTimeout(r, 1500))
-
-    if (sessionId) {
-      try {
-        await api.post(`/pending-payments/${sessionId}/confirm`)
-      } catch {
-        // non-blocking: the sale is created on the POS side regardless
-      }
-    }
-
+  const finishSuccess = useCallback(() => {
     if (completedRef.current) return
     completedRef.current = true
     setPhase('success')
 
-    setTimeout(() => {
-      if (!completedRef.current) return
+    // Give the cashier a brief confirmation before creating the sale.
+    successTimerRef.current = setTimeout(() => {
+      successTimerRef.current = null
       onSuccessRef.current?.(cartSnapshot)
     }, 1000)
+  }, [cartSnapshot])
+
+  useEffect(() => () => {
+    if (successTimerRef.current) clearTimeout(successTimerRef.current)
+  }, [])
+
+  const applyStatus = useCallback((status) => {
+    if (status === 'PAID') {
+      finishSuccess()
+      return true
+    }
+    if (status === 'FAILED') {
+      setPhase('error')
+      setError('Payment was declined or cancelled.')
+      return true
+    }
+    if (status === 'EXPIRED') {
+      setPhase('expired')
+      return true
+    }
+    return false
+  }, [finishSuccess])
+
+  // Poll PayWay through the backend while the modal is open.
+  useEffect(() => {
+    if (!sessionId) return
+
+    let active = true
+    let timer = null
+
+    const poll = async () => {
+      try {
+        const res = await api.get(`/aba/qr-status/${sessionId}`)
+        if (!active) return
+        if (applyStatus(res.data?.status)) return
+      } catch {
+        // Network blip — keep polling.
+      }
+      if (active) timer = setTimeout(poll, POLL_INTERVAL_MS)
+    }
+
+    poll()
+
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+    }
+  }, [sessionId, applyStatus])
+
+  const checkNow = async () => {
+    if (!sessionId || checking) return
+    setChecking(true)
+    try {
+      const res = await api.get(`/aba/qr-status/${sessionId}`)
+      applyStatus(res.data?.status)
+    } catch {
+      setError('Could not reach the payment gateway. Please try again.')
+    } finally {
+      setChecking(false)
+    }
   }
 
   const handleCancel = () => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current)
+      successTimerRef.current = null
+    }
     completedRef.current = true
     onCancel?.()
   }
 
-  const formatAmount = (val) => {
-    if (currency === 'KHR') return `${Math.round(val).toLocaleString()}៛`
-    return `$${val.toFixed(2)}`
+  const handleDone = () => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current)
+      successTimerRef.current = null
+    }
+    onSuccessRef.current?.(cartSnapshot)
   }
 
+  const status = phase === 'success'
+    ? 'paid'
+    : phase === 'error'
+      ? 'failed'
+      : phase === 'expired'
+        ? 'expired'
+        : checking
+          ? 'checking'
+          : 'waiting'
+
+  const expiresAtMs = (() => {
+    if (!expiresAt) return null
+    if (typeof expiresAt === 'number') return expiresAt
+    if (typeof expiresAt === 'string' && /^\d+$/.test(expiresAt)) return Number(expiresAt)
+    const parsed = new Date(expiresAt).getTime()
+    return Number.isFinite(parsed) ? parsed : null
+  })()
+
+  const numericAmount = Number(amount) || 0
+  const rate = Number(exchangeRate) || 0
+  const amountUsd = currency === 'KHR' && rate > 0 ? numericAmount / rate : numericAmount
+  const amountKhr = currency === 'KHR'
+    ? numericAmount
+    : rate > 0
+      ? numericAmount * rate
+      : undefined
+
   return (
-    <div className="receipt-overlay" onClick={handleCancel}>
-      <div
-        className="card-dark"
-        onClick={e => e.stopPropagation()}
-        style={{
-          textAlign: 'center',
-          padding: 32,
-          width: 400,
-          maxWidth: '94%',
-          borderRadius: 'var(--radius-lg)',
-        }}
-      >
-        {phase !== 'success' && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%',
-              background: phase === 'verifying' ? 'rgba(232,163,61,0.15)' : 'rgba(50,113,168,0.15)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px',
-            }}>
-              <i
-                className={`fas ${phase === 'verifying' ? 'fa-spinner fa-spin' : 'fa-qrcode'}`}
-                style={{ fontSize: 22, color: phase === 'verifying' ? 'var(--amber)' : 'var(--primary)' }}
-              />
-            </div>
-            <h5 style={{ margin: 0 }}>
-              {phase === 'verifying' ? 'Verifying Payment...' : 'Scan to Pay'}
-            </h5>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-              {phase === 'verifying' ? 'Please wait...' : 'Show this QR to the customer'}
-            </p>
-            {phase === 'idle' && (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                Merchant: VONG DAVID
-              </p>
-            )}
-          </div>
-        )}
-
-        {phase === 'success' && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: '50%',
-              background: 'rgba(60, 184, 120, 0.15)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px',
-            }}>
-              <i className="fas fa-check" style={{ fontSize: 28, color: '#3bb878' }} />
-            </div>
-            <h5 style={{ margin: '0 0 4px', color: '#ffffff' }}>Payment Successful!</h5>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: 0 }}>
-              Completing sale...
-            </p>
-          </div>
-        )}
-
-        {phase !== 'success' && (
-          <div style={{
-            width: 280, height: 280, margin: '0 auto',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-color)',
-            background: '#fff',
-            display: 'flex', justifyContent: 'center', alignItems: 'center',
-            overflow: 'hidden',
-          }}>
-            {imgFailed ? (
-              <div style={{ textAlign: 'center', color: 'var(--danger)', padding: 20 }}>
-                <i className="fas fa-exclamation-circle" style={{ fontSize: 28, marginBottom: 8, display: 'block' }} />
-                <p style={{ fontSize: 13, margin: 0 }}>Failed to load QR image.</p>
-              </div>
-            ) : phase === 'verifying' ? (
-              <div style={{ textAlign: 'center', color: 'var(--amber)', padding: 20 }}>
-                <i className="fas fa-spinner fa-spin" style={{ fontSize: 48, marginBottom: 12, display: 'block' }} />
-                <p style={{ fontSize: 14, margin: 0, color: 'var(--text-primary)' }}>Verifying...</p>
-              </div>
-            ) : (
-              <>
-                {!imgLoaded && (
-                  <i className="fas fa-spinner fa-spin" style={{ fontSize: 28, color: 'var(--text-muted)', position: 'absolute' }} />
-                )}
-                <img
-                  src="/QCode.jpg"
-                  alt="Static KHQR"
-                  onLoad={() => setImgLoaded(true)}
-                  onError={() => setImgFailed(true)}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: imgLoaded ? 'block' : 'none' }}
-                />
-              </>
-            )}
-          </div>
-        )}
-
-        {phase !== 'success' && (
-          <div style={{ marginTop: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Amount Due</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 24, fontWeight: 700, color: 'var(--secondary)' }}>
-              {formatAmount(amount)}
-            </div>
-            {currency === 'KHR' && (
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>
-                ≈ ${(amount / exchangeRate).toFixed(2)} USD
-              </div>
-            )}
-            {currency === 'USD' && exchangeRate > 0 && (
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>
-                ≈ {Math.round(amount * exchangeRate).toLocaleString()}៛
-              </div>
-            )}
-          </div>
-        )}
-
-        {phase !== 'success' && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              className="btn-outline-custom"
-              onClick={handleCancel}
-              disabled={phase === 'verifying'}
-              style={{ flex: 1, justifyContent: 'center' }}
-            >
-              Cancel
-            </button>
-            <button
-              className="btn-accent"
-              onClick={handleConfirm}
-              disabled={phase === 'verifying'}
-              style={{ flex: 1, justifyContent: 'center' }}
-            >
-              {phase === 'verifying' ? (
-                <><i className="fas fa-spinner fa-spin" /> Verifying Payment...</>
-              ) : (
-                <><i className="fas fa-hand-pointer" /> Payment Confirmed</>
-              )}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+    <KhqrPaymentModal
+      status={status}
+      amountUsd={amountUsd}
+      amountKhr={amountKhr}
+      tranRef={tranId}
+      qrImage={qrImage}
+      merchantName={storeName || 'POS Store'}
+      deeplink={deeplink}
+      expiresAt={expiresAtMs}
+      errorMessage={error}
+      onCheck={checkNow}
+      onCancel={handleCancel}
+      onDone={handleDone}
+    />
   )
 }

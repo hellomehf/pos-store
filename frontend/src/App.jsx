@@ -1,16 +1,20 @@
+import { lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import Layout from './layouts/Layout'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import POS from './pages/POS'
-import Products from './pages/Products'
-import Categories from './pages/Categories'
-import SalesHistory from './pages/SalesHistory'
-import Reports from './pages/Reports'
-import Users from './pages/Users'
-import Settings from './pages/Settings'
-import StockReports from './pages/StockReports'
+
+// Route pages are loaded on demand so heavy dependencies (chart.js,
+// html5-qrcode, qrcode, ...) only download when their page is opened.
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const POS = lazy(() => import('./pages/POS'))
+const Products = lazy(() => import('./pages/Products'))
+const Categories = lazy(() => import('./pages/Categories'))
+const SalesHistory = lazy(() => import('./pages/SalesHistory'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Users = lazy(() => import('./pages/Users'))
+const Settings = lazy(() => import('./pages/Settings'))
+const StockReports = lazy(() => import('./pages/StockReports'))
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()

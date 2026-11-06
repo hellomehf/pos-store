@@ -2,6 +2,8 @@
 
 namespace Tests\Unit\Aba;
 
+use PHPUnit\Framework\Attributes\Test;
+
 use App\Models\AbaPayment;
 use App\Services\Aba\AbaPaymentService;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +24,7 @@ class AbaStatusMapTest extends TestCase
         return $svc;
     }
 
-    /** @test */
+    #[Test]
     public function maps_approved_payment_status_to_paid(): void
     {
         $body = [
@@ -33,7 +35,7 @@ class AbaStatusMapTest extends TestCase
         $this->assertSame(AbaPayment::STATUS_PAID, $this->service()->mapStatus($body));
     }
 
-    /** @test */
+    #[Test]
     public function maps_payment_status_code_zero_to_paid(): void
     {
         $body = [
@@ -44,7 +46,7 @@ class AbaStatusMapTest extends TestCase
         $this->assertSame(AbaPayment::STATUS_PAID, $this->service()->mapStatus($body));
     }
 
-    /** @test */
+    #[Test]
     public function maps_declined_to_failed(): void
     {
         foreach (['DECLINED', 'FAILED', 'CANCELLED', 'REJECTED'] as $payStatus) {
@@ -60,7 +62,7 @@ class AbaStatusMapTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function maps_unknown_status_to_pending(): void
     {
         $body = [
@@ -71,7 +73,7 @@ class AbaStatusMapTest extends TestCase
         $this->assertSame(AbaPayment::STATUS_PENDING, $this->service()->mapStatus($body));
     }
 
-    /** @test */
+    #[Test]
     public function api_level_error_code_returns_pending(): void
     {
         // Non-zero status.code = API error (hash wrong, rate-limited, etc.)
@@ -83,13 +85,13 @@ class AbaStatusMapTest extends TestCase
         $this->assertSame(AbaPayment::STATUS_PENDING, $this->service()->mapStatus($body));
     }
 
-    /** @test */
+    #[Test]
     public function empty_body_returns_pending(): void
     {
         $this->assertSame(AbaPayment::STATUS_PENDING, $this->service()->mapStatus([]));
     }
 
-    /** @test */
+    #[Test]
     public function payment_status_comparison_is_case_insensitive(): void
     {
         $body = [
